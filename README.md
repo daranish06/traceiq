@@ -20,11 +20,31 @@ Two inspection stages are planned:
 
 - [x] Vision baseline: YOLO11n on PKU-Market-PCB, tiled to 640×640
 - [x] Honest evaluation splits: stratified by class, and board-held-out (test boards never seen in training)
+- [x] Baseline evaluated: test mAP50 0.970 on unseen boards, 0.974 stratified
 - [ ] Stage 1 upgrade: add DsPCBSD+ (real factory defects)
 - [ ] Stage 2: assembled-board model
 - [ ] Advisor: Llama 3.2 1B Instruct exported with ExecuTorch, running on Pi 5
 - [ ] Pipeline, operator UI, logging, GPIO alert
 - [ ] Benchmarks on Pi 5 (FPS, latency, memory, temperature)
+
+## Results so far: Stage 1 baseline (YOLO11n, 2.6 M parameters, 640×640 tiles)
+
+Trained on an RTX 5050 Laptop GPU, 100 epochs. Scores are on held-out **test** sets that were never used for training or model selection.
+
+| Class | Unseen boards (08 + 12): P / R / mAP50 | Stratified: P / R / mAP50 |
+|---|---|---|
+| missing_hole | 0.993 / 1.000 / 0.995 | 0.928 / 1.000 / 0.968 |
+| mouse_bite | 0.899 / 0.963 / 0.954 | 0.858 / 0.945 / 0.984 |
+| open_circuit | 0.975 / 0.967 / 0.965 | 0.991 / 0.976 / 0.995 |
+| short | 0.931 / 0.988 / 0.960 | 0.936 / 0.945 / 0.939 |
+| spur | 0.910 / 0.925 / 0.975 | 0.912 / 0.976 / 0.973 |
+| spurious_copper | 0.945 / 0.964 / 0.972 | 0.969 / 0.960 / 0.985 |
+| **All** | **0.942 / 0.968 / 0.970** (mAP50-95 0.502) | **0.933 / 0.967 / 0.974** (mAP50-95 0.554) |
+
+- **Unseen boards**: whole board designs 08 and 12 held out (120 photos, 2,940 tiles, 975 defects). Shows the model generalises to board layouts it has never seen.
+- **Stratified**: 12 test photos per defect class (72 photos, 1,697 tiles, 517 defects).
+- Weakest classes: mouse_bite and spur precision (thin defects that resemble normal copper edges).
+- These are tile-level scores on PKU-Market-PCB, whose defects were added digitally. Real-board accuracy will be measured separately.
 
 ## Repository layout
 
