@@ -1,0 +1,5 @@
+# Vision training environment (laptop/GPU). Install PyTorch first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+ultralytics>=8.4
+opencv-python
+pyyaml

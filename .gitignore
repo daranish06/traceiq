@@ -1,0 +1,22 @@
+# data, training outputs and model files stay out of git (too big / licensed separately)
+datasets/
+runs/
+models/
+weights/
+*.pt
+*.pte
+*.onnx
+*_ncnn_model/
+*.log
+*.zip
+
+# python / editors
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+.ipynb_checkpoints/
+
+# secrets
+.env
+*token*
