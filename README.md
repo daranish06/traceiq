@@ -78,6 +78,11 @@ python vision/tile_dataset.py --src ~/traceiq/datasets/pku_board --dst ~/traceiq
 nohup bash run_overnight.sh > overnight.log 2>&1 &
 ```
 
+## Advisor model
+
+- **Llama 3.2 1B Instruct** by Meta, obtained via `unsloth/Llama-3.2-1B-Instruct` on Hugging Face, used under the Llama 3.2 Community License. **Built with Llama.**
+- `advisor/convert_hf_to_meta.py` converts the Hugging Face checkpoint to Meta's original format (`consolidated.00.pth`, `params.json`, `tokenizer.model`) for ExecuTorch's Llama export. Weights are not stored in this repo.
+
 ## Datasets and credit
 
 - **PKU-Market-PCB**: W. Huang and P. Wei, *A PCB Dataset for Defects Detection and Classification*, arXiv:1901.08204 (2019), Peking University Open Lab on Human Robot Interaction. YOLO-format copy from Roboflow Universe, CC BY 4.0. Defects in this dataset were added digitally to photos of about 10 board designs; see Limitations.
