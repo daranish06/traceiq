@@ -80,14 +80,36 @@ def verdict_for(defects: list[DefectRecord]) -> str:
 
 # ---------------------------------------------------------------- prompt
 SYSTEM = ("You are a PCB quality-control assistant. You explain inspection results to a factory operator "
-          "in plain English. Talk only about the defects listed. Answer in exactly three short lines that start "
-          "with 'Problem:', 'Cause:' and 'Action:'.")
+          "in plain English. Talk only about the defects listed. Reply with exactly three short lines that start "
+          "with 'Problem:', 'Cause:' and 'Action:', covering all listed defects.")
+
+EXAMPLE_USER = ("Inspection result for board EX-1: FAIL.\nDefects found:\n- Open circuit (critical) at lower-left.\n"
+                "- Spur x2 (minor) at upper-right.\nReference: Open circuit: likely cause is over-etching through a "
+                "narrow part of the trace; action: confirm with a continuity test across the break. Spur: likely cause "
+                "is dust or scratch on the phototool; action: measure the spacing between the spur and the nearest "
+                "conductor.\nExplain this to the operator.")
+EXAMPLE_ASSISTANT = ("Problem: An open circuit at the lower-left and two small spurs at the upper-right.\n"
+                     "Cause: The trace was likely over-etched at a narrow point; the spurs likely come from dust on the "
+                     "phototool.\nAction: Run a continuity test and reject the board if the trace is broken; measure "
+                     "the spur spacing and clean the phototool.")
 
 
-def defect_summary(insp: Inspection) -> list[str]:
+MAX_PROMPT_TYPES = 3  # keep the prompt under the exported 512-token prefill limit
+
+
+def prompt_kinds(insp: Inspection) -> list[str]:
+    """Defect types given to Llama: the most severe (then most frequent) first, at most MAX_PROMPT_TYPES."""
+    kinds = list(dict.fromkeys(d.defect_class for d in insp.defects))
+    def rank(k):
+        ds = [d for d in insp.defects if d.defect_class == k]
+        return (max(SEVERITY_RANK[d.severity] for d in ds), len(ds))
+    return sorted(kinds, key=rank, reverse=True)[:MAX_PROMPT_TYPES]
+
+
+def defect_summary(insp: Inspection, kinds: list[str] | None = None) -> list[str]:
     """One plain-English line per defect type, e.g. 'Mouse bite x2 (minor) at lower-left and upper-right'."""
     lines = []
-    for k in dict.fromkeys(d.defect_class for d in insp.defects):
+    for k in (kinds or dict.fromkeys(d.defect_class for d in insp.defects)):
         ds = [d for d in insp.defects if d.defect_class == k]
         sev = RANK_NAME[max(SEVERITY_RANK[d.severity] for d in ds)]
         where = " and ".join(dict.fromkeys(d.region for d in ds))
@@ -97,17 +119,20 @@ def defect_summary(insp: Inspection) -> list[str]:
 
 
 def build_prompt(insp: Inspection) -> str:
-    found = "\n".join(f"- {l}." for l in defect_summary(insp))
+    kinds = prompt_kinds(insp)
+    found = "\n".join(f"- {l}." for l in defect_summary(insp, kinds))
     ref = " ".join(f"{KNOWLEDGE[k]['label']}: likely cause is {KNOWLEDGE[k]['causes'][0].lower()}; "
-                   f"action: {KNOWLEDGE[k]['actions'][0].lower()}."
-                   for k in dict.fromkeys(d.defect_class for d in insp.defects))
+                   f"action: {KNOWLEDGE[k]['actions'][0].lower()}." for k in kinds)
     user = (f"Inspection result for board {insp.board_id}: {insp.verdict}.\n"
             f"Defects found:\n{found}\n"
             f"Reference: {ref}\n"
             "Explain this to the operator.")
     return ("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
             f"{SYSTEM}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
-            f"{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n")
+            f"{EXAMPLE_USER}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            f"{EXAMPLE_ASSISTANT}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
+            f"{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            "Problem:")  # prefill: the model continues in the required format
 
 
 def max_len_for(prompt: str, new_tokens: int = 160) -> int:
@@ -129,18 +154,20 @@ def clean_output(raw: str) -> str:
                  "Write for the operator", "Explain this to the operator"):
         if stop in text:
             text = text.split(stop, 1)[0]
-    m = _REPEAT.search(text)          # cut runaway loops like "Under-etching, Under-etching, ..."
+    text = text.strip()
+    if not text.lower().startswith("problem:"):   # the prompt pre-fills "Problem:"
+        text = "Problem: " + text
+    m = _REPEAT.search(text)                       # cut runaway loops like "Under-etching, Under-etching, ..."
     if m:
         text = text[:m.start()] + m.group(1)
-    keep, seen = [], set()
-    for line in text.splitlines():    # keep every Problem / Cause / Action line (one block per defect type)
+    keep, seen = {}, []
+    for line in text.splitlines():                 # first Problem / Cause / Action line of each kind
         key = line.strip().split(":", 1)[0].lower()
-        if key in ("problem", "cause", "action"):
-            if key == "problem" and keep:
-                keep.append("")        # blank line between blocks
-            seen.add(key)
-            keep.append(line.strip())
-    return "\n".join(keep[:20]) if len(seen) == 3 else text.strip()
+        if key in ("problem", "cause", "action") and key not in keep:
+            keep[key] = line.strip()
+    if len(keep) == 3:
+        return "\n".join(keep[k] for k in ("problem", "cause", "action"))
+    return text
 
 
 LAST_RAW = {"stdout": "", "stderr": ""}
@@ -181,32 +208,47 @@ def log_line_for(insp: Inspection) -> str:
 
 
 # ---------------------------------------------------------------- guard check
-KEYWORDS = {
-    "missing_hole": ["missing hole"], "mouse_bite": ["mouse bite", "mouse-bite"],
-    "open_circuit": ["open circuit", "open-circuit", "broken trace"], "short": ["short circuit", "short "],
-    "spur": ["spur "], "spurious_copper": ["spurious copper"], "hole_breakout": ["breakout", "break-out"],
-    "conductor_scratch": ["scratch"], "conductor_foreign_object": ["foreign object on conductor"],
-    "base_material_foreign_object": ["foreign object on base", "base material"],
+PATTERNS = {
+    "missing_hole": r"missing holes?|holes? (?:is |are )?missing|no hole",
+    "mouse_bite": r"mouse[- ]bites?",
+    "open_circuit": r"open[- ]circuits?|broken trace|trace is broken|open trace",
+    "short": r"short[- ]circuits?|\bshorts?\b|bridg",
+    "spur": r"\bspurs?\b",
+    "spurious_copper": r"spurious copper|copper island|isolated copper",
+    "hole_breakout": r"breakout|break-out|annular ring",
+    "conductor_scratch": r"scratch",
+    "conductor_foreign_object": r"foreign (?:object|material|particle)s?|debris",
+    "base_material_foreign_object": r"foreign (?:object|material|particle)s?|debris|base material|laminate",
 }
+DENIAL = r"\b(?:not present|no defects?|nothing wrong|is fine|are fine|not a defect|no issues?)\b"
 
 
 def guard(advice: str, insp: Inspection) -> tuple[bool, str]:
-    """Advice must be non-empty, mention every detected type, and no undetected type."""
+    """Format OK, every detected type mentioned, no undetected type mentioned, no denial of a defect."""
     if len(advice) < 20:
         return False, "empty or too short"
     if not all(re.search(rf"(?im)^{k}:", advice) for k in ("problem", "cause", "action")):
         return False, "missing Problem/Cause/Action lines"
-    low = " " + advice.lower().replace("\n", " ") + " "
-    found = {d.defect_class for d in insp.defects}
-    for k, words in KEYWORDS.items():
-        mentioned = any(w in low for w in words)
-        if mentioned and k not in found and not (k == "spur" and "spurious" in low):
-            return False, f"mentions undetected defect: {k}"
-    missing = [k for k in found if not any(w in low for w in KEYWORDS[k])
-               and KNOWLEDGE[k]["label"].lower() not in low]
-    if missing:
-        return False, f"does not mention detected: {missing}"
+    low = advice.lower()
+    found = set(prompt_kinds(insp))  # Llama is only told about these
+    for k in found:
+        if not re.search(PATTERNS[k], low):
+            return False, f"does not mention detected: {k}"
+    for k, pat in PATTERNS.items():
+        if k in found or not re.search(pat, low):
+            continue
+        # phrases shared by two classes (e.g. "foreign object") are fine if the other class was detected
+        if any(re.search(PATTERNS[f], low) and re.search(pat, low) and _shared(k, f, low) for f in found):
+            continue
+        return False, f"mentions undetected defect: {k}"
+    if re.search(DENIAL, low):
+        return False, "denies a detected defect"
     return True, "ok"
+
+
+def _shared(a: str, b: str, text: str) -> bool:
+    """True if every match of class a's pattern is also a match of class b's pattern."""
+    return all(re.search(PATTERNS[b], m.group(0)) for m in re.finditer(PATTERNS[a], text))
 
 
 def advise(insp: Inspection, backend: str = "template", cfg: dict | None = None) -> Inspection:
