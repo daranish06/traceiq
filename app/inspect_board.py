@@ -38,27 +38,35 @@ def tile_starts(length: int, tile: int, stride: int) -> list[int]:
     return s
 
 
-def nms(boxes: np.ndarray, scores: np.ndarray, iou: float) -> list[int]:
+def nms(boxes: np.ndarray, scores: np.ndarray, iou: float, contain: float = 0.6) -> list[int]:
+    """Greedy NMS that also drops a box mostly inside a stronger one (partial boxes cut by tile edges)."""
     x1, y1, x2, y2 = boxes.T
     areas = (x2 - x1) * (y2 - y1)
     order, keep = scores.argsort()[::-1], []
     while order.size:
         i = order[0]
         keep.append(int(i))
-        xx1, yy1 = np.maximum(x1[i], x1[order[1:]]), np.maximum(y1[i], y1[order[1:]])
-        xx2, yy2 = np.minimum(x2[i], x2[order[1:]]), np.minimum(y2[i], y2[order[1:]])
+        rest = order[1:]
+        xx1, yy1 = np.maximum(x1[i], x1[rest]), np.maximum(y1[i], y1[rest])
+        xx2, yy2 = np.minimum(x2[i], x2[rest]), np.minimum(y2[i], y2[rest])
         inter = np.clip(xx2 - xx1, 0, None) * np.clip(yy2 - yy1, 0, None)
-        order = order[1:][inter / (areas[i] + areas[order[1:]] - inter + 1e-9) <= iou]
+        ov_iou = inter / (areas[i] + areas[rest] - inter + 1e-9)
+        ov_small = inter / (np.minimum(areas[i], areas[rest]) + 1e-9)
+        order = rest[(ov_iou <= iou) & (ov_small <= contain)]
     return keep
 
 
 class Detector:
     def __init__(self, model_path: str, conf: float = 0.25, tile: int = 640, overlap: float = 0.2,
-                 iou: float = 0.5, batch: int = 8):
+                 iou: float = 0.5, batch: int = 8, class_thresholds: dict | None = None):
         from ultralytics import YOLO
         self.model = YOLO(model_path, task="detect")
         self.names = self.model.names
-        self.conf, self.tile, self.iou, self.batch = conf, tile, iou, batch
+        self.thr = class_thresholds or {}
+        # run the model at the lowest threshold in use, then filter per class
+        self.conf = min([conf] + list(self.thr.values()))
+        self.default_conf = conf
+        self.tile, self.iou, self.batch = tile, iou, batch
         self.stride = int(tile * (1 - overlap))
 
     def __call__(self, img: np.ndarray) -> tuple[list[tuple[str, float, list[float]]], dict]:
@@ -87,9 +95,13 @@ class Detector:
             B, S, C = np.concatenate(boxes), np.concatenate(scores), np.concatenate(classes)
             for c in np.unique(C):  # class-wise NMS removes duplicates from overlapping tiles
                 idx = np.where(C == c)[0]
+                name = self.names[int(c)]
+                idx = idx[S[idx] >= self.thr.get(name, self.default_conf)]
+                if idx.size == 0:
+                    continue
                 for k in nms(B[idx], S[idx], self.iou):
                     j = idx[k]
-                    dets.append((self.names[int(c)], float(S[j]), B[j].tolist()))
+                    dets.append((name, float(S[j]), B[j].tolist()))
         t3 = time.perf_counter()
         timing = {"tiles": len(crops), "tile_ms": round((t1 - t0) * 1e3, 1),
                   "infer_ms": round((t2 - t1) * 1e3, 1), "merge_ms": round((t3 - t2) * 1e3, 1)}
@@ -159,7 +171,9 @@ def main():
     ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
     ap.add_argument("--backend", choices=["template", "native", "llama_main"], default="template")
     ap.add_argument("--config", default=str(ROOT / "advisor/advisor_config.json"))
-    ap.add_argument("--conf", type=float, default=0.25)
+    ap.add_argument("--conf", type=float, default=0.25, help="used for classes without a tuned threshold")
+    ap.add_argument("--thresholds", default=str(ROOT / "models/class_thresholds.json"),
+                    help="per-class thresholds from vision/tune_thresholds.py (skipped if missing)")
     ap.add_argument("--out", default=str(ROOT / "output"))
     ap.add_argument("--limit", type=int, default=0, help="max images from a folder (0 = all)")
     a = ap.parse_args()
@@ -176,7 +190,10 @@ def main():
     if a.limit:
         images = images[:a.limit]
 
-    det = Detector(a.model, conf=a.conf)
+    thr_path = Path(a.thresholds)
+    thresholds = json.loads(thr_path.read_text()) if thr_path.exists() else {}
+    print("class thresholds:", thresholds or f"none (using {a.conf} for all)")
+    det = Detector(a.model, conf=a.conf, class_thresholds=thresholds)
     det(np.zeros((640, 640, 3), np.uint8))  # warm-up so the first board's timing is fair
     start_n = sum(1 for _ in open(out_dir / "inspections.csv")) - 1 if (out_dir / "inspections.csv").exists() else 0
     for n, p in enumerate(images, start=start_n + 1):
