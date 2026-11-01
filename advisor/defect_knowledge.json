@@ -1,0 +1,73 @@
+{
+  "_note": "DRAFT for team review. Bare-PCB fabrication defects (after etching/drilling, before assembly). Causes and actions are short, general shop-floor guidance; check against your own process and the applicable acceptance standard (e.g. IPC-A-600 class) before relying on them.",
+  "missing_hole": {
+    "label": "Missing hole",
+    "severity": "major",
+    "what": "A drilled hole that should be present is absent.",
+    "causes": ["Drill bit broken or worn out during the run", "Hole missing from the drill file or wrong tool assignment", "Drilling step skipped or stopped early on part of the panel"],
+    "actions": ["Compare the board with the drill drawing to confirm the hole is required", "Check the drill machine log and the bit for breakage", "Re-drill if the process allows, otherwise reject the board and check the rest of the panel"]
+  },
+  "mouse_bite": {
+    "label": "Mouse bite",
+    "severity": "minor",
+    "what": "Small bites or notches along the edge of a copper trace, reducing its width.",
+    "causes": ["Over-etching or uneven etch rate", "Defects or dust on the photoresist or phototool during imaging", "Poor resist adhesion at the trace edge"],
+    "actions": ["Measure the remaining trace width against the minimum allowed width", "Reject if the width reduction exceeds the acceptance limit", "Check etchant concentration, speed and resist exposure"]
+  },
+  "open_circuit": {
+    "label": "Open circuit",
+    "severity": "critical",
+    "what": "A copper trace is broken, so the connection is lost.",
+    "causes": ["Over-etching through a narrow part of the trace", "Scratch or handling damage across the trace", "Dust or a resist defect that blocked copper during imaging"],
+    "actions": ["Confirm with a continuity test across the break", "Reject the board unless a repair is permitted for this product class", "Inspect the phototool and etch settings for the same location on other boards"]
+  },
+  "short": {
+    "label": "Short circuit",
+    "severity": "critical",
+    "what": "Unwanted copper connects two conductors that should be isolated.",
+    "causes": ["Under-etching leaving a copper bridge", "Resist residue or contamination on the artwork", "Dust or copper particles during imaging or plating"],
+    "actions": ["Confirm with an electrical isolation test between the two nets", "Reject, or remove the bridge only if rework is allowed, then re-test", "Check etch time and cleanliness of phototools and the imaging area"]
+  },
+  "spur": {
+    "label": "Spur",
+    "severity": "minor",
+    "what": "A small copper protrusion sticking out from the edge of a conductor.",
+    "causes": ["Dust or scratch on the phototool", "Incomplete development or under-etching", "Resist defects at the conductor edge"],
+    "actions": ["Measure the spacing between the spur and the nearest conductor", "Reject if spacing falls below the minimum clearance", "Clean or replace the phototool and check developer and etch settings"]
+  },
+  "spurious_copper": {
+    "label": "Spurious copper",
+    "severity": "major",
+    "what": "An isolated patch of copper left where there should be none.",
+    "causes": ["Incomplete etching in that area", "Resist splash or defect protecting copper that should be removed", "Contamination on the panel before etching"],
+    "actions": ["Check whether the copper reduces clearance to nearby conductors", "Reject or remove it if rework is allowed, then re-inspect", "Review etch uniformity and panel cleaning before imaging"]
+  },
+  "hole_breakout": {
+    "label": "Hole breakout",
+    "severity": "major",
+    "what": "The drilled hole is not centred in its pad, so the copper ring around it is broken.",
+    "causes": ["Drill registration error or misaligned tooling", "Panel stretch or shrink between imaging and drilling", "Layer-to-layer misregistration"],
+    "actions": ["Measure the remaining annular ring against the minimum allowed", "Reject if the breakout exceeds the acceptance limit", "Check drill registration and tooling pins before the next panel"]
+  },
+  "conductor_scratch": {
+    "label": "Conductor scratch",
+    "severity": "minor",
+    "what": "A scratch on a copper conductor from handling or transport.",
+    "causes": ["Boards stacked without separators", "Rough handling or conveyor contact", "Tools or fixtures touching the surface"],
+    "actions": ["Check whether the scratch reduces trace width or exposes the base material", "Reject if conductor thickness or width is below the limit", "Improve handling: gloves, separators, conveyor inspection"]
+  },
+  "conductor_foreign_object": {
+    "label": "Foreign object on conductor",
+    "severity": "minor",
+    "what": "Debris such as dust, fibre or resist particles on a copper conductor.",
+    "causes": ["Dust or fibres in the work area", "Resist or film particles not cleaned off", "Contaminated handling surfaces"],
+    "actions": ["Clean the area (air blow or approved solvent) and re-inspect", "Reject if the object is embedded or conductive and cannot be removed", "Check cleanliness of the line and handling area"]
+  },
+  "base_material_foreign_object": {
+    "label": "Foreign object on base material",
+    "severity": "minor",
+    "what": "Debris or an inclusion on or in the laminate between conductors.",
+    "causes": ["Contaminated laminate from the supplier", "Debris trapped during lamination or handling", "Dust in the work area"],
+    "actions": ["Check whether it is conductive or reduces spacing between conductors", "Clean if it is on the surface; reject if it is embedded in the laminate", "Inform incoming inspection if laminate contamination repeats"]
+  }
+}

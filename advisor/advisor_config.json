@@ -1,0 +1,17 @@
+{
+  "native": {
+    "executorch_dir": "~/executorch-rpi/executorch",
+    "pte": "~/traceiq/llm/traceiq_llama32_1b_8da4w.pte",
+    "params": "~/traceiq/llm/llama32-1b-instruct-meta/params.json",
+    "tokenizer": "~/traceiq/llm/llama32-1b-instruct-meta/tokenizer.model",
+    "max_len": 400,
+    "timeout": 300
+  },
+  "llama_main": {
+    "llama_main": "~/traceiq/pi_deploy/llama_main",
+    "pte": "~/traceiq/pi_deploy/traceiq_llama32_1b_8da4w.pte",
+    "tokenizer": "~/traceiq/pi_deploy/tokenizer.model",
+    "seq_len": 1024,
+    "timeout": 180
+  }
+}
