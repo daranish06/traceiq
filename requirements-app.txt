@@ -1,0 +1,4 @@
+ultralytics>=8.4
+opencv-python
+gradio>=5
+pandas
