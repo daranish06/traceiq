@@ -63,6 +63,25 @@ Notes:
 - 0.746 mAP50 on DsPCBSD+ is the realistic figure for real defects; thin defects (mouse bite, spur, spurious copper, scratches, conductor foreign objects) are the weakest.
 - missing_hole precision is low on the combined test because DsPCBSD+ does not annotate that class: correct detections of holes in DsPCBSD+ images count as false positives. This is a label-space mismatch between datasets, reported as a limitation.
 
+## Results: full-board pipeline (what the operator sees)
+
+Full pipeline on whole test images: 640×640 tiling, YOLO11n (combined 10-class model), merge across tiles,
+per-class confidence thresholds tuned on the validation sets only (`vision/tune_thresholds.py`).
+Evaluated with `vision/eval_boards.py` (match IoU 0.3).
+
+| | PKU-Market-PCB, unseen boards 08 + 12 | DsPCBSD+ V3 test (real factory defects) |
+|---|---|---|
+| Boards / images | 120 | 1,846 |
+| Recall (defects found) | **0.988** (594 / 601) | **0.673** (2,728 / 4,052) |
+| Precision (alarms that are real) | **0.870** | **0.877** |
+| False alarms per board | 0.74 | 0.21 |
+| Boards with every defect found | 113 / 120 | 1,083 / 1,846 |
+| Vision time per board, laptop GPU | 91 ms (24 tiles) | 4.5 ms (1 tile) |
+
+Weak points: on PKU, most false alarms are `missing_hole` on pads that have no hole by design (64 of 89);
+on DsPCBSD+, recall is lowest for spurious copper (0.52), conductor foreign objects (0.46) and scratches (0.60).
+Planned fix for the first: golden-board comparison (flag a missing hole only where the reference board has one).
+
 ## Repository layout
 
 ```
