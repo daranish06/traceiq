@@ -133,12 +133,14 @@ def clean_output(raw: str) -> str:
     if m:
         text = text[:m.start()] + m.group(1)
     keep, seen = [], set()
-    for line in text.splitlines():    # keep the first Problem / Cause / Action line of each kind
+    for line in text.splitlines():    # keep every Problem / Cause / Action line (one block per defect type)
         key = line.strip().split(":", 1)[0].lower()
-        if key in ("problem", "cause", "action") and key not in seen:
+        if key in ("problem", "cause", "action"):
+            if key == "problem" and keep:
+                keep.append("")        # blank line between blocks
             seen.add(key)
             keep.append(line.strip())
-    return "\n".join(keep) if len(seen) == 3 else text.strip()
+    return "\n".join(keep[:20]) if len(seen) == 3 else text.strip()
 
 
 LAST_RAW = {"stdout": "", "stderr": ""}
