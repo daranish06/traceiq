@@ -100,7 +100,7 @@ def build_app(a):
     cfg = {}
     if a.backend != "template":
         cfg = {k: str(Path(v).expanduser()) if isinstance(v, str) and ("/" in v or v.startswith("~")) else v
-               for k, v in json.loads(Path(a.config).read_text())[a.backend].items()}
+               for k, v in json.loads(Path(a.config).read_text())["native" if a.backend == "inproc" else a.backend].items()}
     camera, alert = Camera(), Alert(a.gpio)
     csv_path = out_dir / "inspections.csv"
 
@@ -188,7 +188,7 @@ def main():
     ap = argparse.ArgumentParser(description="TraceIQ operator dashboard")
     ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
     ap.add_argument("--thresholds", default=str(ROOT / "models/class_thresholds.json"))
-    ap.add_argument("--backend", choices=["template", "native", "llama_main"], default="template")
+    ap.add_argument("--backend", choices=["template", "native", "inproc", "llama_main"], default="template")
     ap.add_argument("--config", default=str(ROOT / "advisor/advisor_config.json"))
     ap.add_argument("--out", default=str(ROOT / "output"))
     ap.add_argument("--gpio", action="store_true", help="buzzer GPIO17, red LED GPIO27, green LED GPIO22")

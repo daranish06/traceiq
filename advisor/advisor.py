@@ -192,6 +192,52 @@ def run_native(prompt: str, cfg: dict) -> str:
     return clean_output(out.stdout)
 
 
+class InprocLlama:
+    """Keeps Llama loaded in this Python process (ExecuTorch pybindings), so only the first board pays
+    the model-load cost. Uses ExecuTorch's NativeLlamaRunner from the executorch source tree."""
+    _instance = None
+
+    def __init__(self, cfg: dict):
+        import contextlib, io, sys as _sys
+        from types import SimpleNamespace
+        _sys.path.insert(0, cfg["executorch_dir"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            from examples.models.llama.runner.native import NativeLlamaRunner
+            t0 = time.perf_counter()
+            self.runner = NativeLlamaRunner(SimpleNamespace(
+                params=cfg["params"], tokenizer=cfg["tokenizer"], tokenizer_config=None,
+                max_len=cfg.get("max_len", 1000), kv_cache=True, pte=cfg["pte"]))
+        self.load_s = round(time.perf_counter() - t0, 2)
+        self.max_len = cfg.get("max_len", 1000)
+
+    @classmethod
+    def get(cls, cfg: dict) -> "InprocLlama":
+        if cls._instance is None:
+            cls._instance = cls(cfg)
+        return cls._instance
+
+    def __call__(self, prompt: str, new_tokens: int = 160) -> str:
+        import contextlib, io
+        tok = self.runner.tokenizer
+        ids = tok.encode(prompt, bos=True, eos=False)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):  # the runner prints tokens as it goes
+            out = self.runner.generate(prompt_tokens=ids, max_seq_len=min(self.max_len, len(ids) + new_tokens),
+                                       temperature=0.0, top_p=0.9)
+        LAST_RAW.update(stdout=buf.getvalue(), stderr="")
+        stops = {tok.eos_id, *getattr(tok, "stop_tokens", [])}
+        keep = [t for t in out if t not in stops]
+        try:
+            text = tok.decode(keep)
+        except Exception:  # noqa: BLE001  older tokenizer API
+            text = "".join(tok.decode_token(t) for t in keep)
+        return clean_output(text)
+
+
+def run_inproc(prompt: str, cfg: dict) -> str:
+    return InprocLlama.get(cfg)(prompt)
+
+
 def template_advice(insp: Inspection) -> str:
     if not insp.defects:
         return "Problem: no defects found.\nCause: -\nAction: pass the board to the next step."
@@ -258,7 +304,8 @@ def advise(insp: Inspection, backend: str = "template", cfg: dict | None = None)
         used = "template"
     else:
         try:
-            text = (run_llama_main if backend == "llama_main" else run_native)(build_prompt(insp), cfg or {})
+            fn = {"llama_main": run_llama_main, "native": run_native, "inproc": run_inproc}[backend]
+            text = fn(build_prompt(insp), cfg or {})
         except Exception as e:  # noqa: BLE001
             text = f"[advisor error: {e}]"
         insp.raw_llm = text
@@ -284,14 +331,15 @@ def demo_inspection() -> Inspection:
 
 def main():
     ap = argparse.ArgumentParser(description="TraceIQ advisor demo")
-    ap.add_argument("--backend", choices=["template", "native", "llama_main"], default="template")
+    ap.add_argument("--backend", choices=["template", "native", "inproc", "llama_main"], default="template")
     ap.add_argument("--config", default=str(HERE / "advisor_config.json"))
     ap.add_argument("--debug", action="store_true", help="print the LLM's raw stdout/stderr")
     a = ap.parse_args()
     cfg = {}
     if a.backend != "template":
         cfg = {k: os.path.expanduser(v) if isinstance(v, str) else v
-               for k, v in json.loads(Path(a.config).read_text())[a.backend].items()}
+               for k, v in json.loads(Path(a.config).read_text())[
+                   "native" if a.backend == "inproc" else a.backend].items()}
     insp = advise(demo_inspection(), a.backend, cfg)
     print("PROMPT:\n" + build_prompt(insp) + "\n")
     print(json.dumps({**asdict(insp), "defects": [asdict(d) for d in insp.defects]}, indent=2))

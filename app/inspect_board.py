@@ -174,7 +174,7 @@ def main():
     ap = argparse.ArgumentParser(description="TraceIQ board inspection")
     ap.add_argument("--source", required=True, help="image file or folder")
     ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
-    ap.add_argument("--backend", choices=["template", "native", "llama_main"], default="template")
+    ap.add_argument("--backend", choices=["template", "native", "inproc", "llama_main"], default="template")
     ap.add_argument("--config", default=str(ROOT / "advisor/advisor_config.json"))
     ap.add_argument("--conf", type=float, default=0.25, help="used for classes without a tuned threshold")
     ap.add_argument("--thresholds", default=str(ROOT / "models/class_thresholds.json"),
@@ -188,7 +188,7 @@ def main():
     cfg = {}
     if a.backend != "template":
         cfg = {k: str(Path(v).expanduser()) if isinstance(v, str) and ("/" in v or v.startswith("~")) else v
-               for k, v in json.loads(Path(a.config).read_text())[a.backend].items()}
+               for k, v in json.loads(Path(a.config).read_text())["native" if a.backend == "inproc" else a.backend].items()}
     src = Path(a.source)
     images = sorted(p for p in (src.iterdir() if src.is_dir() else [src])
                     if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"})

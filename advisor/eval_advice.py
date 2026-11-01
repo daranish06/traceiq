@@ -23,7 +23,7 @@ from inspect_board import Detector  # noqa: E402
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=25)
-    ap.add_argument("--backend", default="native", choices=["native", "llama_main"])
+    ap.add_argument("--backend", default="native", choices=["native", "inproc", "llama_main"])
     ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
     ap.add_argument("--thresholds", default=str(ROOT / "models/class_thresholds.json"))
     ap.add_argument("--config", default=str(ROOT / "advisor/advisor_config.json"))
@@ -35,7 +35,7 @@ def main():
     ds = sorted((ROOT / "datasets/dspcbsd_v3/test/images").glob("*.jpg"))
     imgs = random.sample(pku, min(len(pku), a.n // 2)) + random.sample(ds, min(len(ds), a.n - a.n // 2))
     cfg = {k: str(Path(v).expanduser()) if isinstance(v, str) and ("/" in v or v.startswith("~")) else v
-           for k, v in json.loads(Path(a.config).read_text())[a.backend].items()}
+           for k, v in json.loads(Path(a.config).read_text())["native" if a.backend == "inproc" else a.backend].items()}
     thr = json.loads(Path(a.thresholds).read_text()) if Path(a.thresholds).exists() else {}
     det = Detector(a.model, class_thresholds=thr)
 
