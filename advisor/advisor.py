@@ -79,41 +79,66 @@ def verdict_for(defects: list[DefectRecord]) -> str:
 
 
 # ---------------------------------------------------------------- prompt
-SYSTEM = ("You are a PCB quality-control assistant on a bare-board inspection line. "
-          "Use ONLY the findings and reference notes given. Never add defects that are not in the findings. "
-          "Be brief and specific.")
+SYSTEM = ("You are a PCB quality-control assistant. You explain inspection results to a factory operator "
+          "in plain English. Talk only about the defects listed. Answer in exactly three short lines that start "
+          "with 'Problem:', 'Cause:' and 'Action:'.")
+
+
+def defect_summary(insp: Inspection) -> list[str]:
+    """One plain-English line per defect type, e.g. 'Mouse bite x2 (minor) at lower-left and upper-right'."""
+    lines = []
+    for k in dict.fromkeys(d.defect_class for d in insp.defects):
+        ds = [d for d in insp.defects if d.defect_class == k]
+        sev = RANK_NAME[max(SEVERITY_RANK[d.severity] for d in ds)]
+        where = " and ".join(dict.fromkeys(d.region for d in ds))
+        n = f" x{len(ds)}" if len(ds) > 1 else ""
+        lines.append(f"{KNOWLEDGE[k]['label']}{n} ({sev}) at {where}")
+    return lines
 
 
 def build_prompt(insp: Inspection) -> str:
-    kinds = sorted({d.defect_class for d in insp.defects})
-    # compact notes keep the prompt well under the exported max_seq_length (512 tokens)
-    notes = {k: {"cause": KNOWLEDGE[k]["causes"][0], "actions": KNOWLEDGE[k]["actions"][:2]} for k in kinds}
-    findings = [d.to_prompt() for d in insp.defects]
-    user = (f"Board {insp.board_id}. Verdict (fixed by rules): {insp.verdict}.\n"
-            f"Findings: {json.dumps(findings)}\n"
-            f"Reference notes: {json.dumps(notes)}\n"
-            "Write for the operator, under 90 words:\n"
-            "1) What is wrong and where (one line per defect type)\n"
-            "2) Most likely cause\n"
-            "3) What the operator should do now\n"
-            "4) LOG: one line, max 20 words")
+    found = "\n".join(f"- {l}." for l in defect_summary(insp))
+    ref = " ".join(f"{KNOWLEDGE[k]['label']}: likely cause is {KNOWLEDGE[k]['causes'][0].lower()}; "
+                   f"action: {KNOWLEDGE[k]['actions'][0].lower()}."
+                   for k in dict.fromkeys(d.defect_class for d in insp.defects))
+    user = (f"Inspection result for board {insp.board_id}: {insp.verdict}.\n"
+            f"Defects found:\n{found}\n"
+            f"Reference: {ref}\n"
+            "Explain this to the operator.")
     return ("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
             f"{SYSTEM}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
             f"{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n")
+
+
+def max_len_for(prompt: str, new_tokens: int = 160) -> int:
+    return min(1000, len(prompt) // 3 + new_tokens)
 
 
 # ---------------------------------------------------------------- LLM backends
 _LOG_LINE = re.compile(r"^(I |W |E )?\s*(tokenizers:|Using Tiktokenizer|I \d\d:|PyTorchObserver)")
 
 
+_REPEAT = re.compile(r"(\b[\w-]+(?:\s[\w-]+){0,3}\b)(?:[,;]?\s+\1\b){2,}", re.I)
+
+
 def clean_output(raw: str) -> str:
     text = "\n".join(l for l in raw.splitlines() if not _LOG_LINE.match(l.strip()))
     if "assistant<|end_header_id|>" in text:
         text = text.rsplit("assistant<|end_header_id|>", 1)[1]
-    for stop in ("<|eot_id|>", "<|", "Prefill time", "PyTorchObserver", "Response: ["):
+    for stop in ("<|eot_id|>", "<|", "Prefill time", "PyTorchObserver", "Response: [",
+                 "Write for the operator", "Explain this to the operator"):
         if stop in text:
             text = text.split(stop, 1)[0]
-    return text.strip()
+    m = _REPEAT.search(text)          # cut runaway loops like "Under-etching, Under-etching, ..."
+    if m:
+        text = text[:m.start()] + m.group(1)
+    keep, seen = [], set()
+    for line in text.splitlines():    # keep the first Problem / Cause / Action line of each kind
+        key = line.strip().split(":", 1)[0].lower()
+        if key in ("problem", "cause", "action") and key not in seen:
+            seen.add(key)
+            keep.append(line.strip())
+    return "\n".join(keep) if len(seen) == 3 else text.strip()
 
 
 LAST_RAW = {"stdout": "", "stderr": ""}
@@ -131,7 +156,7 @@ def run_llama_main(prompt: str, cfg: dict) -> str:
 def run_native(prompt: str, cfg: dict) -> str:
     cmd = ["python", "-m", "examples.models.llama.runner.native", "--model", "llama3_2",
            "--pte", cfg["pte"], "--params", cfg["params"], "--tokenizer", cfg["tokenizer"],
-           "--kv_cache", "--temperature", "0", "--max_len", str(cfg.get("max_len", 400)), "--prompt", prompt]
+           "--kv_cache", "--temperature", "0", "--max_len", str(max_len_for(prompt)), "--prompt", prompt]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=cfg.get("timeout", 300),
                          cwd=cfg["executorch_dir"])
     LAST_RAW.update(stdout=out.stdout, stderr=out.stderr)
@@ -140,20 +165,17 @@ def run_native(prompt: str, cfg: dict) -> str:
 
 def template_advice(insp: Inspection) -> str:
     if not insp.defects:
-        return f"No defects found. Board {insp.board_id} passes.\nLOG: {insp.board_id} PASS, no defects."
-    lines, kinds = [], []
-    for d in insp.defects:
-        if d.defect_class not in kinds:
-            kinds.append(d.defect_class)
-    for k in kinds:
-        where = ", ".join(sorted({d.region for d in insp.defects if d.defect_class == k}))
-        n = sum(d.defect_class == k for d in insp.defects)
-        lines.append(f"- {KNOWLEDGE[k]['label']} x{n} ({where})")
+        return "Problem: no defects found.\nCause: -\nAction: pass the board to the next step."
     top = max(insp.defects, key=lambda d: (SEVERITY_RANK[d.severity], d.confidence)).defect_class
-    lines.append(f"Likely cause: {KNOWLEDGE[top]['causes'][0]}.")
-    lines.append(f"Action: {KNOWLEDGE[top]['actions'][0]}.")
-    lines.append(f"LOG: {insp.board_id} {insp.verdict}: " + ", ".join(KNOWLEDGE[k]["label"].lower() for k in kinds))
-    return "\n".join(lines)
+    return (f"Problem: {'; '.join(defect_summary(insp))}.\n"
+            f"Cause: {KNOWLEDGE[top]['causes'][0]}.\n"
+            f"Action: {KNOWLEDGE[top]['actions'][0]}.")
+
+
+def log_line_for(insp: Inspection) -> str:
+    if not insp.defects:
+        return f"{insp.board_id} PASS: no defects"
+    return f"{insp.board_id} {insp.verdict}: " + ", ".join(defect_summary(insp))
 
 
 # ---------------------------------------------------------------- guard check
@@ -170,6 +192,8 @@ def guard(advice: str, insp: Inspection) -> tuple[bool, str]:
     """Advice must be non-empty, mention every detected type, and no undetected type."""
     if len(advice) < 20:
         return False, "empty or too short"
+    if not all(re.search(rf"(?im)^{k}:", advice) for k in ("problem", "cause", "action")):
+        return False, "missing Problem/Cause/Action lines"
     low = " " + advice.lower().replace("\n", " ") + " "
     found = {d.defect_class for d in insp.defects}
     for k, words in KEYWORDS.items():
@@ -201,8 +225,7 @@ def advise(insp: Inspection, backend: str = "template", cfg: dict | None = None)
             used = f"{backend}->template"
     insp.advice, insp.guard_passed, insp.advisor_backend = text, ok, used
     insp.advisor_seconds = round(time.perf_counter() - t0, 2)
-    m = re.search(r"LOG:\s*(.+)", text)
-    insp.log_line = m.group(1).strip() if m else f"{insp.board_id} {insp.verdict}"
+    insp.log_line = log_line_for(insp)
     return insp
 
 
