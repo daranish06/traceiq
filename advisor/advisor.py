@@ -51,6 +51,7 @@ class Inspection:
     advisor_backend: str = ""
     advisor_seconds: float = 0.0
     guard_passed: bool = True
+    raw_llm: str = ""
 
 
 def region_name(cx: float, cy: float, w: int, h: int) -> str:
@@ -85,8 +86,8 @@ SYSTEM = ("You are a PCB quality-control assistant on a bare-board inspection li
 
 def build_prompt(insp: Inspection) -> str:
     kinds = sorted({d.defect_class for d in insp.defects})
-    notes = {k: {"what": KNOWLEDGE[k]["what"], "likely_causes": KNOWLEDGE[k]["causes"],
-                 "actions": KNOWLEDGE[k]["actions"]} for k in kinds}
+    # compact notes keep the prompt well under the exported max_seq_length (512 tokens)
+    notes = {k: {"cause": KNOWLEDGE[k]["causes"][0], "actions": KNOWLEDGE[k]["actions"][:2]} for k in kinds}
     findings = [d.to_prompt() for d in insp.defects]
     user = (f"Board {insp.board_id}. Verdict (fixed by rules): {insp.verdict}.\n"
             f"Findings: {json.dumps(findings)}\n"
@@ -115,11 +116,15 @@ def clean_output(raw: str) -> str:
     return text.strip()
 
 
+LAST_RAW = {"stdout": "", "stderr": ""}
+
+
 def run_llama_main(prompt: str, cfg: dict) -> str:
     cmd = [cfg["llama_main"], "--model_path", cfg["pte"], "--tokenizer_path", cfg["tokenizer"],
            "--seq_len", str(cfg.get("seq_len", 1024)), "--temperature", "0", "--prompt", prompt]
     env = dict(os.environ, LD_LIBRARY_PATH=f"{Path(cfg['llama_main']).parent}:{os.environ.get('LD_LIBRARY_PATH', '')}")
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=cfg.get("timeout", 180), env=env)
+    LAST_RAW.update(stdout=out.stdout, stderr=out.stderr)
     return clean_output(out.stdout)
 
 
@@ -129,6 +134,7 @@ def run_native(prompt: str, cfg: dict) -> str:
            "--kv_cache", "--temperature", "0", "--max_len", str(cfg.get("max_len", 400)), "--prompt", prompt]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=cfg.get("timeout", 300),
                          cwd=cfg["executorch_dir"])
+    LAST_RAW.update(stdout=out.stdout, stderr=out.stderr)
     return clean_output(out.stdout)
 
 
@@ -187,6 +193,7 @@ def advise(insp: Inspection, backend: str = "template", cfg: dict | None = None)
             text = (run_llama_main if backend == "llama_main" else run_native)(build_prompt(insp), cfg or {})
         except Exception as e:  # noqa: BLE001
             text = f"[advisor error: {e}]"
+        insp.raw_llm = text
         ok, why = guard(text, insp)
         used = backend
         if not ok:
@@ -212,6 +219,7 @@ def main():
     ap = argparse.ArgumentParser(description="TraceIQ advisor demo")
     ap.add_argument("--backend", choices=["template", "native", "llama_main"], default="template")
     ap.add_argument("--config", default=str(HERE / "advisor_config.json"))
+    ap.add_argument("--debug", action="store_true", help="print the LLM's raw stdout/stderr")
     a = ap.parse_args()
     cfg = {}
     if a.backend != "template":
@@ -220,6 +228,10 @@ def main():
     insp = advise(demo_inspection(), a.backend, cfg)
     print("PROMPT:\n" + build_prompt(insp) + "\n")
     print(json.dumps({**asdict(insp), "defects": [asdict(d) for d in insp.defects]}, indent=2))
+    print(f"\nprompt length: {len(build_prompt(insp))} chars (~{len(build_prompt(insp)) // 4} tokens)")
+    if a.debug:
+        print("\n----- RAW STDOUT (last 40 lines) -----\n" + "\n".join(LAST_RAW["stdout"].splitlines()[-40:]))
+        print("\n----- RAW STDERR (last 25 lines) -----\n" + "\n".join(LAST_RAW["stderr"].splitlines()[-25:]))
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
     "pte": "~/traceiq/llm/traceiq_llama32_1b_8da4w.pte",
     "params": "~/traceiq/llm/llama32-1b-instruct-meta/params.json",
     "tokenizer": "~/traceiq/llm/llama32-1b-instruct-meta/tokenizer.model",
-    "max_len": 400,
+    "max_len": 1000,
     "timeout": 300
   },
   "llama_main": {
