@@ -121,10 +121,13 @@ def annotate(img: np.ndarray, insp: A.Inspection) -> np.ndarray:
         label = f"{A.KNOWLEDGE[d.defect_class]['label']} {d.confidence:.2f}"
         cv2.putText(out, label, (x1 - pad, max(15 * th, y1 - pad - 4)), cv2.FONT_HERSHEY_SIMPLEX,
                     0.5 * th, col, th, cv2.LINE_AA)
-    bar = 34 * th
-    cv2.rectangle(out, (0, 0), (W, bar), VERDICT_COLORS[insp.verdict], -1)
-    cv2.putText(out, f"{insp.board_id}  {insp.verdict}  ({len(insp.defects)} defects)", (10, int(bar * 0.72)),
+    bar = 34 * th  # banner above the image so it never hides defects
+    canvas = np.zeros((H + bar, W, 3), np.uint8)
+    canvas[:bar] = VERDICT_COLORS[insp.verdict]
+    canvas[bar:] = out
+    cv2.putText(canvas, f"{insp.board_id}  {insp.verdict}  ({len(insp.defects)} defects)", (10, int(bar * 0.72)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8 * th, (255, 255, 255), 2 * th, cv2.LINE_AA)
+    out = canvas
     return out
 
 
