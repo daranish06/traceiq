@@ -23,7 +23,8 @@ def main():
     pt = YOLO(a.model)
     outs = {}
     for fmt in ("ncnn", "onnx"):
-        outs[fmt] = pt.export(format=fmt, imgsz=a.imgsz, half=False, simplify=(fmt == "onnx"))
+        extra = {"simplify": True} if fmt == "onnx" else {}
+        outs[fmt] = pt.export(format=fmt, imgsz=a.imgsz, **extra)
         print(f"{fmt}: {outs[fmt]}")
 
     imgs = sorted(Path(a.check).glob("*.jpg"))[:20]
