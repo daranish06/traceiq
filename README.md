@@ -21,7 +21,7 @@ Two inspection stages are planned:
 - [x] Vision baseline: YOLO11n on PKU-Market-PCB, tiled to 640×640
 - [x] Honest evaluation splits: stratified by class, and board-held-out (test boards never seen in training)
 - [x] Baseline evaluated: test mAP50 0.970 on unseen boards, 0.974 stratified
-- [ ] Stage 1 upgrade: add DsPCBSD+ (real factory defects)
+- [x] Stage 1 upgrade: added DsPCBSD+ (real factory defects), 10-class combined model
 - [ ] Stage 2: assembled-board model
 - [ ] Advisor: Llama 3.2 1B Instruct exported with ExecuTorch, running on Pi 5
 - [ ] Pipeline, operator UI, logging, GPIO alert
@@ -45,6 +45,23 @@ Trained on an RTX 5050 Laptop GPU, 100 epochs. Scores are on held-out **test** s
 - **Stratified**: 12 test photos per defect class (72 photos, 1,697 tiles, 517 defects).
 - Weakest classes: mouse_bite and spur precision (thin defects that resemble normal copper edges).
 - These are tile-level scores on PKU-Market-PCB, whose defects were added digitally. Real-board accuracy will be measured separately.
+
+## Results: combined model (PKU-Market-PCB + DsPCBSD+, 10 classes, YOLO11n)
+
+Trained 100 epochs on PKU board-held-out tiles + DsPCBSD+ leakage-safer V3 split. Test-set scores per source:
+
+| Test set | Images | Defects | P | R | mAP50 | mAP50-95 |
+|---|---|---|---|---|---|---|
+| PKU-Market-PCB, unseen boards 08 + 12 (synthetic defects) | 2,940 tiles | 975 | 0.906 | 0.939 | **0.964** | 0.492 |
+| DsPCBSD+ V3 test (real factory AOI defects) | 1,846 | 4,052 | 0.724 | 0.704 | **0.746** | 0.417 |
+| Both together | 4,786 | 5,027 | 0.699 | 0.759 | 0.809 | 0.449 |
+
+DsPCBSD+ test, per class (P / R / mAP50): mouse_bite 0.666 / 0.640 / 0.669 · open_circuit 0.650 / 0.823 / 0.786 · short 0.790 / 0.867 / 0.881 · spur 0.711 / 0.642 / 0.727 · spurious_copper 0.754 / 0.520 / 0.664 · hole_breakout 0.871 / 0.961 / 0.978 · conductor_scratch 0.667 / 0.623 / 0.670 · conductor_foreign_object 0.659 / 0.490 / 0.558 · base_material_foreign_object 0.746 / 0.768 / 0.783.
+
+Notes:
+- Adding real factory data kept PKU accuracy almost unchanged (0.964 vs 0.970 for the PKU-only model) while adding 4 new defect types.
+- 0.746 mAP50 on DsPCBSD+ is the realistic figure for real defects; thin defects (mouse bite, spur, spurious copper, scratches, conductor foreign objects) are the weakest.
+- missing_hole precision is low on the combined test because DsPCBSD+ does not annotate that class: correct detections of holes in DsPCBSD+ images count as false positives. This is a label-space mismatch between datasets, reported as a limitation.
 
 ## Repository layout
 
@@ -84,6 +101,9 @@ nohup bash run_overnight.sh > overnight.log 2>&1 &
 - `advisor/convert_hf_to_meta.py` converts the Hugging Face checkpoint to Meta's original format (`consolidated.00.pth`, `params.json`, `tokenizer.model`) for ExecuTorch's Llama export. Weights are not stored in this repo.
 
 ## Datasets and credit
+
+- **DsPCBSD+**: S. Lv et al., *A dataset for deep learning based detection of printed circuit board surface defect*, Scientific Data (2024); Figshare DOI 10.6084/m9.figshare.24970329, CC BY 4.0.
+- **DsPCBSD+ leakage-safer V3 split**: Yihong Ma (2026), Figshare DOI 10.6084/m9.figshare.34355967 (split manifest only).
 
 - **PKU-Market-PCB**: W. Huang and P. Wei, *A PCB Dataset for Defects Detection and Classification*, arXiv:1901.08204 (2019), Peking University Open Lab on Human Robot Interaction. YOLO-format copy from Roboflow Universe, CC BY 4.0. Defects in this dataset were added digitally to photos of about 10 board designs; see Limitations.
 
