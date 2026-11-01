@@ -119,8 +119,10 @@ def annotate(img: np.ndarray, insp: A.Inspection) -> np.ndarray:
         col = COLORS[d.severity]
         cv2.rectangle(out, (x1 - pad, y1 - pad), (x2 + pad, y2 + pad), col, 2 * th)
         label = f"{A.KNOWLEDGE[d.defect_class]['label']} {d.confidence:.2f}"
-        cv2.putText(out, label, (x1 - pad, max(15 * th, y1 - pad - 4)), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5 * th, col, th, cv2.LINE_AA)
+        (tw, tht), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5 * th, th)
+        lx = int(min(max(0, x1 - pad), W - tw - 2))          # keep label inside the image
+        ly = int(y1 - pad - 4) if y1 - pad - 4 > tht + 2 else int(y2 + pad + tht + 4)
+        cv2.putText(out, label, (lx, ly), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * th, col, th, cv2.LINE_AA)
     bar = 34 * th  # banner above the image so it never hides defects
     canvas = np.zeros((H + bar, W, 3), np.uint8)
     canvas[:bar] = VERDICT_COLORS[insp.verdict]
