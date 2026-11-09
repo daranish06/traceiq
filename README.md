@@ -14,7 +14,7 @@ Two inspection stages are planned:
 | Stage | What it inspects | Status |
 |---|---|---|
 | 1. Bare board | PCB after fabrication, before assembly (shorts, opens, spurs, mouse bites, missing holes, spurious copper) | Baseline model trained |
-| 2. Assembled board | PCB after soldering (solder bridges, missing/shifted components, insufficient/excess solder) | In progress |
+| 2. Assembled board | PCB after soldering (solder bridges, missing/shifted components, insufficient/excess solder) | Model trained |
 
 ## Status
 
@@ -26,7 +26,7 @@ Two inspection stages are planned:
 - [x] Advisor: Llama 3.2 1B Instruct exported with ExecuTorch (XNNPACK, 8-bit dynamic activations / 4-bit weights), with rule-based verdict, safety check and template fallback
 - [x] Pipeline, operator dashboard (Gradio), CSV/JSONL logging, GPIO alert code
 - [x] Vision model exported to NCNN and ONNX for the Arm CPU
-- [ ] Stage 2: assembled-board model
+- [x] Stage 2: assembled-board model (9 solder/component classes), selectable in the dashboard
 - [ ] Deployment and benchmarks on Pi 5 (FPS, latency, memory, temperature)
 - [ ] Test on our own camera photos of real boards
 
@@ -105,6 +105,38 @@ Weak points:
   have the lowest recall.
 - Planned improvement: golden-board comparison (compare against a known-good board of the same design).
 
+## Results: Stage 2, assembled boards (YOLO11n, 9 classes)
+
+Data: PCB solder and component defect photos (ParsaVictor, Hugging Face), 3,836 train / 687 val / 686 test images,
+checked for exact duplicates across splits (none found, `vision/check_asm.py`). Images are close-ups, so the whole
+image is used (no tiling).
+
+Model choice (test set, YOLO validation):
+
+| Model | P | R | mAP50 | mAP50-95 | Laptop GPU time |
+|---|---|---|---|---|---|
+| **YOLO11n @ 640 (chosen)** | 0.909 | **0.766** | **0.861** | 0.558 | **3.4 ms** |
+| YOLO11n @ 960 | 0.924 | 0.740 | 0.858 | 0.576 | 8.7 ms |
+
+960 px input gave no gain in mAP50 and is about 2.5× slower, so the 640 model is deployed.
+
+Full pipeline with per-class thresholds tuned on val only (`vision/eval_boards.py --stage 2`, match IoU 0.3):
+
+| Test set: 686 images (427 with no defect) | |
+|---|---|
+| Recall (defects found) | **0.828** (549 / 663) |
+| Precision (alarms that are real) | **0.896** |
+| False alarms per image | 0.09 |
+| Images with every defect found | 611 / 686 |
+| Images with no false alarm | 634 / 686 |
+
+Per class, recall / precision: shifted component 1.00 / 0.89 · solder bridge 0.87 / 1.00 · insufficient solder 0.86 / 0.85 ·
+missing component 0.84 / 0.85 · excess solder 0.83 / 0.95 · physical damage 0.75 / 0.86 · solder void 0.57 / 0.64 ·
+burn 0.47 / 0.75.
+
+Weak points: burn marks and solder voids (few test examples: 32 and 28). `oxidation` has no val/test examples in this
+dataset, so it is trained but not measured.
+
 ## Repository layout
 
 ```
@@ -144,6 +176,8 @@ nohup bash run_overnight.sh > overnight.log 2>&1 &
 
 ## Datasets and credit
 
+- **PCB solder defect detection** (Stage 2): ParsaVictor, Hugging Face `ParsaVictor/pcb-solder-defect-detection`, merged and re-annotated from several real-world sources; released for research, educational and internal engineering use. Not redistributed here.
+
 - **DsPCBSD+**: S. Lv et al., *A dataset for deep learning based detection of printed circuit board surface defect*, Scientific Data (2024); Figshare DOI 10.6084/m9.figshare.24970329, CC BY 4.0.
 - **DsPCBSD+ leakage-safer V3 split**: Yihong Ma (2026), Figshare DOI 10.6084/m9.figshare.34355967 (split manifest only).
 
@@ -152,7 +186,7 @@ nohup bash run_overnight.sh > overnight.log 2>&1 &
 ## Known limitations (tracked)
 
 1. PKU defects are synthetic and cover ~10 board designs, so dataset scores are optimistic. Mitigation: board-held-out test, real-factory data (DsPCBSD+), and a separate test on our own Pi-camera photos.
-2. Stage 1 covers bare boards only. Assembled boards are Stage 2.
+2. Stage 2 (assembled boards) is trained on public close-up photos; accuracy on whole boards seen by our own camera is still to be measured.
 3. Pi 5 speed with tiling is not yet measured.
 4. PKU-Market-PCB and DsPCBSD+ annotate different defect types (DsPCBSD+ has no `missing_hole` labels), so combined-test precision for some classes is understated.
 
