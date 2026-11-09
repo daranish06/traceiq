@@ -154,15 +154,27 @@ def annotate(img: np.ndarray, insp: A.Inspection) -> np.ndarray:
     out = img.copy()
     H, W = out.shape[:2]
     th = max(1, round(min(H, W) / 400))
+    placed: list[tuple[int, int, int, int]] = []  # label rectangles already drawn (x1, y1, x2, y2)
+
+    def free(r):
+        return all(r[2] <= p[0] or r[0] >= p[2] or r[3] <= p[1] or r[1] >= p[3] for p in placed)
+
     for d in insp.defects:
         x1, y1, x2, y2 = d.bbox_px
         pad = 6 * th
         col = COLORS[d.severity]
         cv2.rectangle(out, (x1 - pad, y1 - pad), (x2 + pad, y2 + pad), col, 2 * th)
         label = f"{A.KNOWLEDGE[d.defect_class]['label']} {d.confidence:.2f}"
-        (tw, tht), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5 * th, th)
+        (tw, tht), base = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5 * th, th)
+        lh = tht + base + 2
         lx = int(min(max(0, x1 - pad), W - tw - 2))          # keep label inside the image
-        ly = int(y1 - pad - 4) if y1 - pad - 4 > tht + 2 else int(y2 + pad + tht + 4)
+        # candidate baselines: above the box, below it, then further up/down until the label is clear of others
+        cands = [y1 - pad - 4, y2 + pad + tht + 4] + [y1 - pad - 4 - k * lh for k in range(1, 6)] + \
+                [y2 + pad + tht + 4 + k * lh for k in range(1, 6)]
+        cands = [y for y in cands if tht + 2 <= y <= H - base - 2] or [max(tht + 2, min(H - 2, y1))]
+        ly = next((y for y in cands if free((lx, y - tht - 2, lx + tw, y + base))), cands[0])
+        placed.append((lx, ly - tht - 2, lx + tw, ly + base))
+        cv2.rectangle(out, (lx - 1, ly - tht - 2), (lx + tw + 1, ly + base), (30, 30, 30), -1)  # dark backing so every colour is readable
         cv2.putText(out, label, (lx, ly), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * th, col, th, cv2.LINE_AA)
     bar = 34 * th  # banner above the image so it never hides defects
     canvas = np.zeros((H + bar, W, 3), np.uint8)
