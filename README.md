@@ -172,7 +172,20 @@ nohup bash run_overnight.sh > overnight.log 2>&1 &
 ## Advisor model
 
 - **Llama 3.2 1B Instruct** by Meta, obtained via `unsloth/Llama-3.2-1B-Instruct` on Hugging Face, used under the Llama 3.2 Community License. **Built with Llama.**
-- `advisor/convert_hf_to_meta.py` converts the Hugging Face checkpoint to Meta's original format (`consolidated.00.pth`, `params.json`, `tokenizer.model`) for ExecuTorch's Llama export. Weights are not stored in this repo.
+- `advisor/convert_hf_to_meta.py` converts the Hugging Face checkpoint to Meta's original format (`consolidated.00.pth`, `params.json`, `tokenizer.model`) for ExecuTorch's Llama export. Exported with XNNPACK, 8-bit dynamic activations and 4-bit weights (group size 32). Weights are not stored in this repo.
+- The verdict (PASS / REVIEW / FAIL) is decided by rules from the defect severities, never by the LLM. The LLM only explains.
+- The prompt gives the detected defects plus one reference cause and action per type (`advisor/defect_knowledge.json`) and a one-shot example. Stage 2 examples have a single defect of a type that was not detected, so the 1B model has nothing extra to copy.
+- Safety check on every answer: Problem / Cause / Action format, every detected type mentioned, no undetected type, no invented location, no denial. Clauses about an undetected type in the Cause/Action lines are removed first; if the answer still fails, a template built from the reference text is shown instead.
+
+Advice check on 25 test boards per stage (`advisor/eval_advice.py`, Llama running in-process on the laptop CPU):
+
+| | LLM answer used | Fallback to template | Mean advice time (laptop CPU) |
+|---|---|---|---|
+| Stage 1, bare boards | **96%** (23 / 24) | 1 | 30 s |
+| Stage 2, assembled boards | **95%** (21 / 22) | 1 | 17 s |
+
+Advice times vary with laptop CPU load; Pi 5 times will be measured separately. The rating sheets
+(`bench/advice_eval*.csv`) have columns for a human score of correctness, grounding and usefulness.
 
 ## Datasets and credit
 
