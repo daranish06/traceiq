@@ -319,7 +319,8 @@ PATTERNS = {
     "solder_void": r"\bvoids?\b|gas pockets?|\bbubbles?\b",
     "missing_component": r"missing (?:component|part)s?|(?:component|part)s? (?:is |are )?missing|\babsent\b",
     "shifted_component": r"\bshifted\b|\bdisplaced\b|misaligned (?:component|part)|(?:component|part)s? (?:is |are )?"
-                         r"(?:misaligned|out of position|off[- ]position)|tombston\w*|\bskew\w*",
+                         r"(?:misaligned|out of position|off[- ]position)|tombston\w*|\bskew\w*|realign\w*|"
+                         r"placed with an offset|placement offset",
     "burn": r"\bburn(?:t|ed|s|ing)?\b|burn marks?|scorch\w*|char(?:red|ring)\b",
     "physical_damage": r"physical(?:ly)? damage|\bcrack(?:ed|s)?\b|\bchipped\b|broken (?:part|component)",
     "oxidation": r"oxidi[sz]\w*|oxidation|corro\w*|tarnish\w*",
@@ -347,7 +348,21 @@ def guard(advice: str, insp: Inspection) -> tuple[bool, str]:
         return False, f"mentions undetected defect: {k}"
     if re.search(DENIAL, low):
         return False, "denies a detected defect"
+    # locations in the Problem line must be ones where a defect was actually found
+    allowed = {d.region for d in insp.defects if d.defect_class in found}
+    problem = re.search(r"(?im)^problem:(.*)$", advice).group(1).lower()
+    said = {f"{r}-{c}".replace("center", "centre").replace("middle-centre", "centre")
+            for r, c in re.findall(_REGION_2, problem)}
+    for m in re.finditer(r"\bcent(?:re|er)\b", problem):  # plain "centre" (not part of "upper-centre")
+        if not re.search(r"(upper|middle|lower)[- ]$", problem[:m.start()]):
+            said.add("centre")
+    extra = said - allowed
+    if extra:
+        return False, f"mentions a location with no defect: {', '.join(sorted(extra))}"
     return True, "ok"
+
+
+_REGION_2 = r"\b(upper|middle|lower)[- ](left|centre|center|right)\b"
 
 
 def _shared(a: str, b: str, text: str) -> bool:

@@ -65,7 +65,7 @@
     "severity": "minor",
     "what": "A small copper protrusion sticking out from the edge of a conductor.",
     "causes": [
-      "Dust or scratch on the phototool",
+      "Dust or a defect on the phototool",
       "Incomplete development or under-etching",
       "Resist defects at the conductor edge"
     ],
@@ -115,7 +115,7 @@
       "Tools or fixtures touching the surface"
     ],
     "actions": [
-      "Check whether the scratch reduces trace width or exposes the base material",
+      "Check whether the scratch reduces trace width or cuts through the copper",
       "Reject if conductor thickness or width is below the limit",
       "Improve handling: gloves, separators, conveyor inspection"
     ]
