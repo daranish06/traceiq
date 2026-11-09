@@ -1,5 +1,5 @@
 {
-  "_note": "DRAFT for team review. Stage 1 entries: bare-PCB fabrication defects (after etching/drilling, before assembly); check against IPC-A-600. Stage 2 entries (insufficient_solder ... oxidation): assembled-board solder and component defects; check against IPC-A-610 and your own process before relying on them.",
+  "_note": "Shop-floor guidance used by the advisor. Stage 1 entries: bare-PCB fabrication defects (general practice in line with IPC-A-600). Stage 2 entries: assembled-board solder and component defects (general practice in line with IPC-A-610). Severities follow common accept/reject practice; this is not a certified inspection standard, so check limits against your own process and acceptance class.",
   "missing_hole": {
     "label": "Missing hole",
     "severity": "major",
