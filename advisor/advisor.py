@@ -89,28 +89,39 @@ SYSTEM = ("You are a PCB quality-control assistant. You explain inspection resul
 EXAMPLE_USER_1 = ("Inspection result for board EX-1: FAIL.\nDefects found:\n- Open circuit (critical) at lower-left.\n"
                 "- Spur x2 (minor) at upper-right.\nReference: Open circuit: likely cause is over-etching through a "
                 "narrow part of the trace; action: confirm with a continuity test across the break. Spur: likely cause "
-                "is dust or scratch on the phototool; action: measure the spacing between the spur and the nearest "
+                "is dust or a defect on the phototool; action: measure the spacing between the spur and the nearest "
                 "conductor.\nExplain this to the operator.")
 EXAMPLE_ASSISTANT_1 = ("Problem: An open circuit at the lower-left and two small spurs at the upper-right.\n"
                      "Cause: The trace was likely over-etched at a narrow point; the spurs likely come from dust on the "
                      "phototool.\nAction: Run a continuity test and reject the board if the trace is broken; measure "
                      "the spur spacing and clean the phototool.")
 
-# Stage 2 (assembled board) one-shot example, used when any solder/component defect is present.
-EXAMPLE_USER_2 = ("Inspection result for board EX-2: FAIL.\nDefects found:\n- Solder bridge (critical) at upper-left.\n"
-                  "- Shifted component (major) at centre.\nReference: Solder bridge: likely cause is too much solder "
-                  "paste; action: remove it with solder wick. Shifted component: likely cause is a placement offset; "
-                  "action: check the lead overhang.\nExplain this to the operator.")
-EXAMPLE_ASSISTANT_2 = ("Problem: A solder bridge at the upper-left and a shifted component in the centre.\n"
-                       "Cause: Too much solder paste joined two pads; the part was placed with an offset.\n"
-                       "Action: Remove the bridge with solder wick and check for a short; realign the part.")
+# Stage 2 (assembled board) one-shot examples. A 1B model copies its example closely, so each example has a
+# single defect, and the one used is never a type that was detected (nothing extra to copy into the answer).
+EXAMPLES_2 = {
+    "solder_void": (
+        "Inspection result for board EX-2: REVIEW.\nDefects found:\n- Solder void (minor) at lower-right.\n"
+        "Reference: Solder void: likely cause is flux or moisture outgassing during reflow; action: check the void "
+        "size against the limit and rework large voids.\nExplain this to the operator.",
+        "Problem: A solder void at the lower-right.\n"
+        "Cause: Gas from flux or moisture was trapped in the joint during reflow.\n"
+        "Action: Check the void size against the limit and rework the joint if it is too large."),
+    "burn": (
+        "Inspection result for board EX-3: FAIL.\nDefects found:\n- Burn mark (critical) at lower-right.\n"
+        "Reference: Burn mark: likely cause is a soldering iron held too long or too hot; action: reject the "
+        "board and check for lifted pads and damaged parts.\nExplain this to the operator.",
+        "Problem: A burn mark at the lower-right.\n"
+        "Cause: The soldering iron was likely held too long or was too hot.\n"
+        "Action: Reject the board and check the area for lifted pads and damaged parts."),
+}
 STAGE2_CLASSES = {"insufficient_solder", "excess_solder", "solder_bridge", "solder_void", "missing_component",
                   "shifted_component", "burn", "physical_damage", "oxidation"}
 
 
 def example_for(insp: "Inspection") -> tuple[str, str]:
-    if any(d.defect_class in STAGE2_CLASSES for d in insp.defects):
-        return EXAMPLE_USER_2, EXAMPLE_ASSISTANT_2
+    kinds = {d.defect_class for d in insp.defects}
+    if kinds & STAGE2_CLASSES:
+        return EXAMPLES_2["burn" if "solder_void" in kinds else "solder_void"]
     return EXAMPLE_USER_1, EXAMPLE_ASSISTANT_1
 
 
@@ -328,6 +339,30 @@ PATTERNS = {
 DENIAL = r"\b(?:not present|no defects?|nothing wrong|is fine|are fine|not a defect|no issues?)\b"
 
 
+def drop_unsupported(advice: str, insp: Inspection) -> str:
+    """Remove clauses in the Cause and Action lines that talk about a defect type that was not detected
+    (e.g. '...; realign the part' when no shifted part was found). The Problem line is never edited:
+    if it is wrong, the guard rejects the whole answer."""
+    found = set(prompt_kinds(insp))
+    others = [k for k in PATTERNS if k not in found]
+
+    def unsupported(clause: str) -> bool:
+        low = clause.lower()
+        return any(re.search(PATTERNS[k], low) and not any(_shared(k, f, low) for f in found) for k in others)
+
+    out = []
+    for line in advice.splitlines():
+        head, sep, body = line.partition(":")
+        if sep and head.strip().lower() in ("cause", "action"):
+            parts = re.split(r"(?<=[;.])\s+", body.strip())
+            kept = [p for p in parts if not unsupported(p)]
+            if kept and len(kept) < len(parts):
+                text = " ".join(kept).rstrip(";").strip()
+                line = f"{head}: {text if re.search(r'[.!?]$', text) else text + '.'}"
+        out.append(line)
+    return "\n".join(out)
+
+
 def guard(advice: str, insp: Inspection) -> tuple[bool, str]:
     """Format OK, every detected type mentioned, no undetected type mentioned, no denial of a defect."""
     if len(advice) < 20:
@@ -383,6 +418,8 @@ def advise(insp: Inspection, backend: str = "template", cfg: dict | None = None)
             text = f"[advisor error: {type(e).__name__}: {e}]"
             print(f"ADVISOR ERROR ({backend}): {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         insp.raw_llm = text
+        if not text.startswith("[advisor error"):
+            text = drop_unsupported(text, insp)
         ok, why = guard(text, insp)
         if text.startswith("[advisor error"):
             why = text.strip("[]")
