@@ -14,7 +14,7 @@ Backends:
 """
 from __future__ import annotations
 
-import argparse, json, os, re, shlex, subprocess, time
+import argparse, json, os, re, shlex, subprocess, sys, time
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
@@ -339,9 +339,12 @@ def advise(insp: Inspection, backend: str = "template", cfg: dict | None = None)
             fn = {"llama_main": run_llama_main, "native": run_native, "inproc": run_inproc}[backend]
             text = fn(build_prompt(insp), cfg or {})
         except Exception as e:  # noqa: BLE001
-            text = f"[advisor error: {e}]"
+            text = f"[advisor error: {type(e).__name__}: {e}]"
+            print(f"ADVISOR ERROR ({backend}): {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         insp.raw_llm = text
         ok, why = guard(text, insp)
+        if text.startswith("[advisor error"):
+            why = text.strip("[]")
         used = backend
         if not ok:
             text = template_advice(insp) + f"\n(note: LLM advice rejected by guard: {why})"
