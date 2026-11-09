@@ -14,7 +14,7 @@ Two inspection stages are planned:
 | Stage | What it inspects | Status |
 |---|---|---|
 | 1. Bare board | PCB after fabrication, before assembly (shorts, opens, spurs, mouse bites, missing holes, spurious copper) | Baseline model trained |
-| 2. Assembled board | PCB after soldering (solder bridges, missing/shifted components, insufficient/excess solder) | Planned |
+| 2. Assembled board | PCB after soldering (solder bridges, missing/shifted components, insufficient/excess solder) | In progress |
 
 ## Status
 
@@ -22,10 +22,13 @@ Two inspection stages are planned:
 - [x] Honest evaluation splits: stratified by class, and board-held-out (test boards never seen in training)
 - [x] Baseline evaluated: test mAP50 0.970 on unseen boards, 0.974 stratified
 - [x] Stage 1 upgrade: added DsPCBSD+ (real factory defects), 10-class combined model
+- [x] Model comparison (YOLO11n, YOLO11n + stronger augmentation, YOLO26n, YOLO11s); YOLO11n + stronger augmentation chosen
+- [x] Advisor: Llama 3.2 1B Instruct exported with ExecuTorch (XNNPACK, 8-bit dynamic activations / 4-bit weights), with rule-based verdict, safety check and template fallback
+- [x] Pipeline, operator dashboard (Gradio), CSV/JSONL logging, GPIO alert code
+- [x] Vision model exported to NCNN and ONNX for the Arm CPU
 - [ ] Stage 2: assembled-board model
-- [ ] Advisor: Llama 3.2 1B Instruct exported with ExecuTorch, running on Pi 5
-- [ ] Pipeline, operator UI, logging, GPIO alert
-- [ ] Benchmarks on Pi 5 (FPS, latency, memory, temperature)
+- [ ] Deployment and benchmarks on Pi 5 (FPS, latency, memory, temperature)
+- [ ] Test on our own camera photos of real boards
 
 ## Results so far: Stage 1 baseline (YOLO11n, 2.6 M parameters, 640×640 tiles)
 
@@ -63,24 +66,44 @@ Notes:
 - 0.746 mAP50 on DsPCBSD+ is the realistic figure for real defects; thin defects (mouse bite, spur, spurious copper, scratches, conductor foreign objects) are the weakest.
 - missing_hole precision is low on the combined test because DsPCBSD+ does not annotate that class: correct detections of holes in DsPCBSD+ images count as false positives. This is a label-space mismatch between datasets, reported as a limitation.
 
+## Model comparison (combined 10-class data, 100 epochs, test sets)
+
+| Model | Params | PKU unseen boards P / R / mAP50 | DsPCBSD+ test P / R / mAP50 |
+|---|---|---|---|
+| YOLO11n (baseline) | 2.6 M | 0.906 / 0.939 / 0.964 | 0.724 / 0.704 / 0.746 |
+| **YOLO11n + stronger augmentation (chosen)** | 2.6 M | **0.948 / 0.962 / 0.965** | **0.726 / 0.728 / 0.762** |
+| YOLO26n | 2.4 M | 0.897 / 0.968 / 0.949 | 0.720 / 0.720 / 0.753 |
+| YOLO11s | 9.4 M | 0.860 / 0.968 / 0.970 | 0.733 / 0.730 / 0.769 |
+
+YOLO11s is only slightly better on DsPCBSD+ but is about 3.6× larger, which costs too much speed on a CPU-only Pi 5.
+YOLO11n with stronger augmentation gives the best balance, so it is the deployed model.
+
 ## Results: full-board pipeline (what the operator sees)
 
-Full pipeline on whole test images: 640×640 tiling, YOLO11n (combined 10-class model), merge across tiles,
+Full pipeline on whole test images: 640×640 tiling, chosen YOLO11n model, merge across tiles,
 per-class confidence thresholds tuned on the validation sets only (`vision/tune_thresholds.py`).
 Evaluated with `vision/eval_boards.py` (match IoU 0.3).
 
 | | PKU-Market-PCB, unseen boards 08 + 12 | DsPCBSD+ V3 test (real factory defects) |
 |---|---|---|
 | Boards / images | 120 | 1,846 |
-| Recall (defects found) | **0.988** (594 / 601) | **0.673** (2,728 / 4,052) |
-| Precision (alarms that are real) | **0.870** | **0.877** |
-| False alarms per board | 0.74 | 0.21 |
-| Boards with every defect found | 113 / 120 | 1,083 / 1,846 |
-| Vision time per board, laptop GPU | 91 ms (24 tiles) | 4.5 ms (1 tile) |
+| Recall (defects found) | **0.997** (599 / 601) | **0.705** (2,855 / 4,052) |
+| Precision (alarms that are real) | **0.874** | **0.876** |
+| False alarms per board | 0.72 | 0.22 |
+| Boards with every defect found | 118 / 120 | 1,118 / 1,846 |
+| Boards with no false alarm | 47 / 120 | 1,515 / 1,846 |
+| Vision time per board, laptop GPU | 91 ms (24 tiles) | 4.4 ms (1 tile) |
 
-Weak points: on PKU, most false alarms are `missing_hole` on pads that have no hole by design (64 of 89);
-on DsPCBSD+, recall is lowest for spurious copper (0.52), conductor foreign objects (0.46) and scratches (0.60).
-Planned fix for the first: golden-board comparison (flag a missing hole only where the reference board has one).
+Per class, DsPCBSD+ recall: hole breakout 0.93, open circuit 0.83, base-material foreign object 0.78,
+short 0.78, spur 0.72, scratch 0.62, spurious copper 0.59, mouse bite 0.58, conductor foreign object 0.47.
+
+Weak points:
+- On PKU, 61 of the 86 false alarms are `short` (precision 0.62 for that class). On real DsPCBSD+ boards `short`
+  precision is 0.92, so this mostly affects PKU's digitally edited images.
+- `missing_hole` now has no false alarms (tuned threshold 0.6); the earlier model flagged SMD pads that have no hole by design.
+- On DsPCBSD+, thin and low-contrast defects (conductor foreign objects, mouse bites, spurious copper, scratches)
+  have the lowest recall.
+- Planned improvement: golden-board comparison (compare against a known-good board of the same design).
 
 ## Repository layout
 
@@ -131,6 +154,7 @@ nohup bash run_overnight.sh > overnight.log 2>&1 &
 1. PKU defects are synthetic and cover ~10 board designs, so dataset scores are optimistic. Mitigation: board-held-out test, real-factory data (DsPCBSD+), and a separate test on our own Pi-camera photos.
 2. Stage 1 covers bare boards only. Assembled boards are Stage 2.
 3. Pi 5 speed with tiling is not yet measured.
+4. PKU-Market-PCB and DsPCBSD+ annotate different defect types (DsPCBSD+ has no `missing_hole` labels), so combined-test precision for some classes is understated.
 
 ## Team
 
