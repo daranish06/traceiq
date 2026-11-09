@@ -167,6 +167,32 @@ _LOG_LINE = re.compile(r"^(I |W |E )?\s*(tokenizers:|Using Tiktokenizer|I \d\d:|
 _REPEAT = re.compile(r"(\b[\w-]+(?:\s[\w-]+){0,3}\b)(?:[,;]?\s+\1\b){2,}", re.I)
 
 
+_SENT = re.compile(r"(?<=[.!?])\s+")
+
+
+def trim_line(line: str, max_sent: int = 2) -> str:
+    """Keep the first sentences of one Problem/Cause/Action line and stop at the first sign of looping:
+    a repeated sentence, a sentence that restates an earlier one ('again', 'repeat'), or an unfinished
+    last sentence cut off by the token limit."""
+    head, _, body = line.partition(":")
+    sents = [x.strip() for x in _SENT.split(body.strip()) if x.strip()]
+    keep, seen = [], set()
+    for x in sents:
+        norm = " ".join(re.findall(r"[a-z]+", x.lower())[:5])
+        if norm in seen or re.search(r"\b(again|repeat)\b", x, re.I) and keep:
+            break
+        seen.add(norm)
+        keep.append(x)
+        if len(keep) == max_sent:
+            break
+    if len(keep) > 1 and not re.search(r"[.!?]$", keep[-1]):
+        keep.pop()  # unfinished sentence at the end
+    out = " ".join(keep)
+    if out and not re.search(r"[.!?]$", out):
+        out += "."
+    return f"{head}: {out}" if out else line
+
+
 def clean_output(raw: str) -> str:
     text = "\n".join(l for l in raw.splitlines() if not _LOG_LINE.match(l.strip()))
     if "assistant<|end_header_id|>" in text:
@@ -185,7 +211,7 @@ def clean_output(raw: str) -> str:
     for line in text.splitlines():                 # first Problem / Cause / Action line of each kind
         key = line.strip().split(":", 1)[0].lower()
         if key in ("problem", "cause", "action") and key not in keep:
-            keep[key] = line.strip()
+            keep[key] = trim_line(line.strip())
     if len(keep) == 3:
         return "\n".join(keep[k] for k in ("problem", "cause", "action"))
     return text
