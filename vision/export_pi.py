@@ -17,25 +17,29 @@ def main():
     ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--check", default=str(ROOT / "datasets/pku_board_tiles/valid/images"))
+    ap.add_argument("--thresholds", default=None, help="copied next to the NCNN model (default: from the model name)")
+    ap.add_argument("--formats", nargs="+", default=["ncnn"], help="ncnn (Pi) and/or onnx")
     a = ap.parse_args()
     from ultralytics import YOLO
 
     pt = YOLO(a.model)
     outs = {}
-    for fmt in ("ncnn", "onnx"):
+    for fmt in a.formats:
         extra = {"simplify": True} if fmt == "onnx" else {}
         outs[fmt] = pt.export(format=fmt, imgsz=a.imgsz, **extra)
         print(f"{fmt}: {outs[fmt]}")
 
-    imgs = sorted(Path(a.check).glob("*.jpg"))[:20]
+    imgs = sorted(p for p in Path(a.check).iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"})[:20]
     ref = [len(r.boxes) for r in pt.predict([str(p) for p in imgs], imgsz=a.imgsz, conf=0.25, verbose=False)]
     for fmt, path in outs.items():
         m = YOLO(path, task="detect")
         got = [len(m.predict(str(p), imgsz=a.imgsz, conf=0.25, verbose=False)[0].boxes) for p in imgs]
         same = sum(x == y for x, y in zip(ref, got))
-        print(f"{fmt}: same number of detections as PyTorch on {same}/{len(imgs)} tiles")
-    shutil.copy(ROOT / "models/class_thresholds.json", Path(outs["ncnn"]) / "class_thresholds.json") \
-        if (ROOT / "models/class_thresholds.json").exists() else None
+        print(f"{fmt}: same number of detections as PyTorch on {same}/{len(imgs)} images")
+    thr = Path(a.thresholds) if a.thresholds else ROOT / "models" / (
+        "class_thresholds_asm.json" if "asm" in Path(a.model).stem else "class_thresholds.json")
+    if "ncnn" in outs and thr.exists():
+        shutil.copy(thr, Path(outs["ncnn"]) / "class_thresholds.json")
 
 
 if __name__ == "__main__":

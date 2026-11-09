@@ -5,14 +5,18 @@ for each class, sweep thresholds 0.05..0.95 and keep the one with the best F1 (b
 misses vs false alarms). Writes models/class_thresholds.json, used by app/inspect_board.py.
 
   python vision/tune_thresholds.py --model models/pcb_combined_y11n.pt
+  python vision/tune_thresholds.py --model models/pcb_asm_y11n.pt --val datasets/asm_raw/final_solder/images/val \
+         --out models/class_thresholds_asm.json            # Stage 2
 """
-import argparse, json
+import argparse, json, sys
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app"))
+from inspect_board import label_path, list_images  # noqa: E402
 DEFAULT_VAL = [ROOT / "datasets/pku_board_tiles/valid", ROOT / "datasets/dspcbsd_v3/valid"]
 
 
@@ -26,7 +30,9 @@ def iou(a, b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
-    ap.add_argument("--val", nargs="+", default=[str(p) for p in DEFAULT_VAL])
+    ap.add_argument("--val", nargs="+", default=[str(p) for p in DEFAULT_VAL],
+                    help="validation folders: either <set> (with images/ and labels/) or an images folder")
+    ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--out", default=str(ROOT / "models/class_thresholds.json"))
     ap.add_argument("--iou", type=float, default=0.5)
     ap.add_argument("--min_thr", type=float, default=0.25, help="never go below this")
@@ -39,15 +45,16 @@ def main():
     n_gt = defaultdict(int)
     images = []
     for d in a.val:
-        images += sorted((Path(d) / "images").glob("*.jpg"))
+        d = Path(d)
+        images += list_images(d / "images" if (d / "images").is_dir() else d)
     print(f"{len(images)} validation images")
 
     for i in range(0, len(images), 32):
         batch = images[i:i + 32]
-        for ip, r in zip(batch, model.predict([str(p) for p in batch], imgsz=640, conf=0.05, verbose=False)):
+        for ip, r in zip(batch, model.predict([str(p) for p in batch], imgsz=a.imgsz, conf=0.05, verbose=False)):
             h, w = r.orig_shape
             gts = []
-            lp = ip.parent.parent / "labels" / (ip.stem + ".txt")
+            lp = label_path(ip)
             if lp.exists():
                 for line in lp.read_text().split("\n"):
                     p = line.split()

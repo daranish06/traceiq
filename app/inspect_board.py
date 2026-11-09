@@ -9,7 +9,8 @@ Works on the laptop (PyTorch .pt model) and on the Raspberry Pi (NCNN model fold
 Examples
   python app/inspect_board.py --source datasets/pku_board/test/images --limit 5
   python app/inspect_board.py --source board.jpg --backend native
-  python app/inspect_board.py --source board.jpg --model models/pcb_combined_ncnn_model --backend llama_main
+  python app/inspect_board.py --stage 2 --source datasets/asm_raw/final_solder/images/test --limit 5
+  python app/inspect_board.py --source board.jpg --pi --backend llama_main          # Raspberry Pi
 """
 from __future__ import annotations
 
@@ -26,6 +27,37 @@ import advisor as A  # noqa: E402
 
 COLORS = {"critical": (0, 0, 255), "major": (0, 140, 255), "minor": (0, 200, 255)}  # BGR
 VERDICT_COLORS = {"PASS": (0, 160, 0), "REVIEW": (0, 170, 255), "FAIL": (0, 0, 220)}
+
+# Two inspection stages, each with its own model, thresholds and tiling mode.
+#   Stage 1 (bare board): small defects on large board photos -> always tile.
+#   Stage 2 (assembled board): trained on whole close-up photos -> tile only very large images.
+STAGES = {
+    1: {"name": "Stage 1: bare board", "model": "models/pcb_combined_y11n.pt",
+        "pi_model": "models/pcb_combined_y11n_ncnn_model",
+        "thresholds": "models/class_thresholds.json", "tiling": "on", "imgsz": 640, "area_frac": 0.002},
+    2: {"name": "Stage 2: assembled board", "model": "models/pcb_asm_y11n.pt",
+        "pi_model": "models/pcb_asm_y11n_ncnn_model",
+        "thresholds": "models/class_thresholds_asm.json", "tiling": "auto", "imgsz": 640, "area_frac": None},
+}
+IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp"}
+
+
+def list_images(folder) -> list[Path]:
+    return sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in IMG_EXT)
+
+
+def label_path(img_path: Path) -> Path:
+    """YOLO convention: .../images/<split>/x.jpg -> .../labels/<split>/x.txt (last 'images' part replaced)."""
+    parts = list(img_path.parts)
+    i = len(parts) - 1 - parts[::-1].index("images")
+    parts[i] = "labels"
+    return Path(*parts).with_suffix(".txt")
+
+
+def stage_paths(stage: int, pi: bool = False) -> tuple[str, str]:
+    s = STAGES[stage]
+    model = ROOT / (s["pi_model"] if pi else s["model"])
+    return str(model), str(ROOT / s["thresholds"])
 
 
 # ---------------------------------------------------------------- tiling + merge
@@ -58,7 +90,10 @@ def nms(boxes: np.ndarray, scores: np.ndarray, iou: float, contain: float = 0.6)
 
 class Detector:
     def __init__(self, model_path: str, conf: float = 0.25, tile: int = 640, overlap: float = 0.2,
-                 iou: float = 0.5, batch: int = 8, class_thresholds: dict | None = None):
+                 iou: float = 0.5, batch: int = 8, class_thresholds: dict | None = None,
+                 tiling: str = "on"):
+        """tiling: 'on' = always cut into tile x tile crops; 'off' = whole image resized to tile;
+        'auto' = whole image unless it is more than twice the tile size on its long side."""
         from ultralytics import YOLO
         self.model = YOLO(model_path, task="detect")
         self.names = self.model.names
@@ -66,17 +101,23 @@ class Detector:
         # run the model at the lowest threshold in use, then filter per class
         self.conf = min([conf] + list(self.thr.values()))
         self.default_conf = conf
-        self.tile, self.iou, self.batch = tile, iou, batch
+        self.tile, self.iou, self.batch, self.tiling = tile, iou, batch, tiling
         self.stride = int(tile * (1 - overlap))
+
+    def use_tiles(self, H: int, W: int) -> bool:
+        return self.tiling == "on" or (self.tiling == "auto" and max(H, W) > 2 * self.tile)
 
     def __call__(self, img: np.ndarray) -> tuple[list[tuple[str, float, list[float]]], dict]:
         H, W = img.shape[:2]
         t0 = time.perf_counter()
         crops, offsets = [], []
-        for ty in tile_starts(H, self.tile, self.stride):
-            for tx in tile_starts(W, self.tile, self.stride):
-                crops.append(img[ty:ty + self.tile, tx:tx + self.tile])
-                offsets.append((tx, ty))
+        if not self.use_tiles(H, W):
+            crops, offsets = [img], [(0, 0)]
+        else:
+            for ty in tile_starts(H, self.tile, self.stride):
+                for tx in tile_starts(W, self.tile, self.stride):
+                    crops.append(img[ty:ty + self.tile, tx:tx + self.tile])
+                    offsets.append((tx, ty))
         t1 = time.perf_counter()
         boxes, scores, classes = [], [], []
         for i in range(0, len(crops), self.batch):
@@ -152,14 +193,15 @@ def append_logs(insp: A.Inspection, timing: dict, out_dir: Path, image_path: str
 
 
 # ---------------------------------------------------------------- main
-def inspect_one(img_path: Path, det: Detector, backend: str, cfg: dict, out_dir: Path, board_id: str):
+def inspect_one(img_path: Path, det: Detector, backend: str, cfg: dict, out_dir: Path, board_id: str,
+                area_frac: float | None = 0.002):
     img = cv2.imread(str(img_path))
     if img is None:
         raise SystemExit(f"cannot read {img_path}")
     H, W = img.shape[:2]
     t0 = time.perf_counter()
     dets, timing = det(img)
-    recs = [A.make_record(c, p, b, W, H) for c, p, b in dets if c in A.KNOWLEDGE]
+    recs = [A.make_record(c, p, b, W, H, area_frac) for c, p, b in dets if c in A.KNOWLEDGE]
     insp = A.Inspection(board_id, time.strftime("%Y-%m-%dT%H:%M:%S"), A.verdict_for(recs), recs)
     timing["vision_ms"] = round((time.perf_counter() - t0) * 1e3, 1)
     A.advise(insp, backend, cfg)
@@ -173,12 +215,15 @@ def inspect_one(img_path: Path, det: Detector, backend: str, cfg: dict, out_dir:
 def main():
     ap = argparse.ArgumentParser(description="TraceIQ board inspection")
     ap.add_argument("--source", required=True, help="image file or folder")
-    ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
+    ap.add_argument("--stage", type=int, choices=[1, 2], default=1, help="1 = bare board, 2 = assembled board")
+    ap.add_argument("--pi", action="store_true", help="use the stage's NCNN model (Raspberry Pi)")
+    ap.add_argument("--model", default=None, help="override the stage's model")
+    ap.add_argument("--tiling", choices=["on", "off", "auto"], default=None, help="override the stage's tiling")
     ap.add_argument("--backend", choices=["template", "native", "inproc", "llama_main"], default="template")
     ap.add_argument("--config", default=str(ROOT / "advisor/advisor_config.json"))
     ap.add_argument("--conf", type=float, default=0.25, help="used for classes without a tuned threshold")
-    ap.add_argument("--thresholds", default=str(ROOT / "models/class_thresholds.json"),
-                    help="per-class thresholds from vision/tune_thresholds.py (skipped if missing)")
+    ap.add_argument("--thresholds", default=None,
+                    help="override the stage's per-class thresholds (vision/tune_thresholds.py; skipped if missing)")
     ap.add_argument("--out", default=str(ROOT / "output"))
     ap.add_argument("--limit", type=int, default=0, help="max images from a folder (0 = all)")
     a = ap.parse_args()
@@ -190,19 +235,22 @@ def main():
         cfg = {k: str(Path(v).expanduser()) if isinstance(v, str) and ("/" in v or v.startswith("~")) else v
                for k, v in json.loads(Path(a.config).read_text())["native" if a.backend == "inproc" else a.backend].items()}
     src = Path(a.source)
-    images = sorted(p for p in (src.iterdir() if src.is_dir() else [src])
-                    if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"})
+    images = list_images(src) if src.is_dir() else [src]
     if a.limit:
         images = images[:a.limit]
 
-    thr_path = Path(a.thresholds)
+    model, thr_default = stage_paths(a.stage, a.pi)
+    model = a.model or model
+    thr_path = Path(a.thresholds or thr_default)
     thresholds = json.loads(thr_path.read_text()) if thr_path.exists() else {}
+    print(f"{STAGES[a.stage]['name']} | model {model}")
     print("class thresholds:", thresholds or f"none (using {a.conf} for all)")
-    det = Detector(a.model, conf=a.conf, class_thresholds=thresholds)
+    det = Detector(model, conf=a.conf, class_thresholds=thresholds, tile=STAGES[a.stage]["imgsz"],
+                   tiling=a.tiling or STAGES[a.stage]["tiling"])
     det(np.zeros((640, 640, 3), np.uint8))  # warm-up so the first board's timing is fair
     start_n = sum(1 for _ in open(out_dir / "inspections.csv")) - 1 if (out_dir / "inspections.csv").exists() else 0
     for n, p in enumerate(images, start=start_n + 1):
-        insp, t = inspect_one(p, det, a.backend, cfg, out_dir, f"B-{n:04d}")
+        insp, t = inspect_one(p, det, a.backend, cfg, out_dir, f"B-{n:04d}", STAGES[a.stage]["area_frac"])
         print(f"\n[{insp.board_id}] {p.name}  {insp.verdict}  | {t['tiles']} tiles, vision {t['vision_ms']} ms, "
               f"advisor {t['advisor_ms']} ms ({insp.advisor_backend})")
         print("  " + insp.advice.replace("\n", "\n  "))

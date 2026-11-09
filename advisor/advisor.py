@@ -60,11 +60,14 @@ def region_name(cx: float, cy: float, w: int, h: int) -> str:
     return "centre" if (row, col) == ("middle", "centre") else f"{row}-{col}"
 
 
-def make_record(cls: str, conf: float, xyxy, img_w: int, img_h: int) -> DefectRecord:
+def make_record(cls: str, conf: float, xyxy, img_w: int, img_h: int,
+                area_frac: float | None = LARGE_AREA_FRAC) -> DefectRecord:
+    """area_frac: raise severity one level if the box is larger than this fraction of the image.
+    None disables it (Stage 2 close-up photos, where every defect fills a large part of the image)."""
     x1, y1, x2, y2 = (int(round(v)) for v in xyxy)
     area = max(0, x2 - x1) * max(0, y2 - y1)
     base = SEVERITY_RANK[KNOWLEDGE[cls]["severity"]]
-    if area > LARGE_AREA_FRAC * img_w * img_h:
+    if area_frac is not None and area > area_frac * img_w * img_h:
         base = min(3, base + 1)
     return DefectRecord(cls, float(conf), [x1, y1, x2, y2],
                         region_name((x1 + x2) / 2, (y1 + y2) / 2, img_w, img_h), area, RANK_NAME[base])
@@ -83,15 +86,32 @@ SYSTEM = ("You are a PCB quality-control assistant. You explain inspection resul
           "in plain English. Talk only about the defects listed. Reply with exactly three short lines that start "
           "with 'Problem:', 'Cause:' and 'Action:', covering all listed defects.")
 
-EXAMPLE_USER = ("Inspection result for board EX-1: FAIL.\nDefects found:\n- Open circuit (critical) at lower-left.\n"
+EXAMPLE_USER_1 = ("Inspection result for board EX-1: FAIL.\nDefects found:\n- Open circuit (critical) at lower-left.\n"
                 "- Spur x2 (minor) at upper-right.\nReference: Open circuit: likely cause is over-etching through a "
                 "narrow part of the trace; action: confirm with a continuity test across the break. Spur: likely cause "
                 "is dust or scratch on the phototool; action: measure the spacing between the spur and the nearest "
                 "conductor.\nExplain this to the operator.")
-EXAMPLE_ASSISTANT = ("Problem: An open circuit at the lower-left and two small spurs at the upper-right.\n"
+EXAMPLE_ASSISTANT_1 = ("Problem: An open circuit at the lower-left and two small spurs at the upper-right.\n"
                      "Cause: The trace was likely over-etched at a narrow point; the spurs likely come from dust on the "
                      "phototool.\nAction: Run a continuity test and reject the board if the trace is broken; measure "
                      "the spur spacing and clean the phototool.")
+
+# Stage 2 (assembled board) one-shot example, used when any solder/component defect is present.
+EXAMPLE_USER_2 = ("Inspection result for board EX-2: FAIL.\nDefects found:\n- Solder bridge (critical) at upper-left.\n"
+                  "- Shifted component (major) at centre.\nReference: Solder bridge: likely cause is too much solder "
+                  "paste; action: remove it with solder wick. Shifted component: likely cause is a placement offset; "
+                  "action: check the lead overhang.\nExplain this to the operator.")
+EXAMPLE_ASSISTANT_2 = ("Problem: A solder bridge at the upper-left and a shifted component in the centre.\n"
+                       "Cause: Too much solder paste joined two pads; the part was placed with an offset.\n"
+                       "Action: Remove the bridge with solder wick and check for a short; realign the part.")
+STAGE2_CLASSES = {"insufficient_solder", "excess_solder", "solder_bridge", "solder_void", "missing_component",
+                  "shifted_component", "burn", "physical_damage", "oxidation"}
+
+
+def example_for(insp: "Inspection") -> tuple[str, str]:
+    if any(d.defect_class in STAGE2_CLASSES for d in insp.defects):
+        return EXAMPLE_USER_2, EXAMPLE_ASSISTANT_2
+    return EXAMPLE_USER_1, EXAMPLE_ASSISTANT_1
 
 
 MAX_PROMPT_TYPES = 3  # keep the prompt under the exported 512-token prefill limit
@@ -127,10 +147,11 @@ def build_prompt(insp: Inspection) -> str:
             f"Defects found:\n{found}\n"
             f"Reference: {ref}\n"
             "Explain this to the operator.")
+    ex_user, ex_assistant = example_for(insp)
     return ("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
             f"{SYSTEM}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
-            f"{EXAMPLE_USER}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-            f"{EXAMPLE_ASSISTANT}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
+            f"{ex_user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            f"{ex_assistant}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
             f"{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             "Problem:")  # prefill: the model continues in the required format
 
@@ -265,6 +286,17 @@ PATTERNS = {
     "conductor_scratch": r"scratch",
     "conductor_foreign_object": r"foreign (?:object|material|particle)s?|debris",
     "base_material_foreign_object": r"foreign (?:object|material|particle)s?|debris|base material|laminate",
+    # Stage 2 (assembled board)
+    "insufficient_solder": r"insufficient solder|(?:too little|not enough|lack of) solder(?! paste)|starved",
+    "excess_solder": r"excess(?:ive)? solder(?! paste)|too much solder(?! paste)|extra solder(?! paste)",
+    "solder_bridge": r"solder bridg\w*|\bbridg\w*|short[- ]circuits?|\bshorts?\b",
+    "solder_void": r"\bvoids?\b|gas pockets?|\bbubbles?\b",
+    "missing_component": r"missing (?:component|part)s?|(?:component|part)s? (?:is |are )?missing|\babsent\b",
+    "shifted_component": r"\bshifted\b|\bdisplaced\b|misaligned (?:component|part)|(?:component|part)s? (?:is |are )?"
+                         r"(?:misaligned|out of position|off[- ]position)|tombston\w*|\bskew\w*",
+    "burn": r"\bburn(?:t|ed|s|ing)?\b|burn marks?|scorch\w*|char(?:red|ring)\b",
+    "physical_damage": r"physical(?:ly)? damage|\bcrack(?:ed|s)?\b|\bchipped\b|broken (?:part|component)",
+    "oxidation": r"oxidi[sz]\w*|oxidation|corro\w*|tarnish\w*",
 }
 DENIAL = r"\b(?:not present|no defects?|nothing wrong|is fine|are fine|not a defect|no issues?)\b"
 

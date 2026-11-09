@@ -15,7 +15,7 @@ import cv2
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
-from inspect_board import Detector  # noqa: E402
+from inspect_board import STAGES, Detector, label_path, list_images, stage_paths  # noqa: E402
 
 
 def iou(a, b):
@@ -28,24 +28,31 @@ def iou(a, b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--images", required=True)
-    ap.add_argument("--model", default=str(ROOT / "models/pcb_combined_y11n.pt"))
-    ap.add_argument("--thresholds", default=str(ROOT / "models/class_thresholds.json"))
+    ap.add_argument("--stage", type=int, choices=[1, 2], default=1)
+    ap.add_argument("--model", default=None, help="override the stage's model")
+    ap.add_argument("--thresholds", default=None, help="override the stage's thresholds")
+    ap.add_argument("--tiling", choices=["on", "off", "auto"], default=None)
+    ap.add_argument("--imgsz", type=int, default=None, help="tile / input size (default: the stage's)")
     ap.add_argument("--iou", type=float, default=0.3, help="match IoU (boxes on full images)")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--tag", default=None, help="name for the output file (default: from the folder)")
     ap.add_argument("--out", default=str(ROOT / "bench"))
     a = ap.parse_args()
 
-    thr = json.loads(Path(a.thresholds).read_text()) if Path(a.thresholds).exists() else {}
-    det = Detector(a.model, class_thresholds=thr)
+    model, thr_default = stage_paths(a.stage)
+    thr_file = Path(a.thresholds or thr_default)
+    thr = json.loads(thr_file.read_text()) if thr_file.exists() else {}
+    det = Detector(a.model or model, class_thresholds=thr, tile=a.imgsz or STAGES[a.stage]["imgsz"],
+                   tiling=a.tiling or STAGES[a.stage]["tiling"])
     names = det.names
-    imgs = sorted(Path(a.images).glob("*.jpg"))[: a.limit or None]
+    imgs = list_images(a.images)[: a.limit or None]
     tp, fp, fn = Counter(), Counter(), Counter()
     boards_all_found = boards_no_fa = 0
     times = []
     for ip in imgs:
         img = cv2.imread(str(ip)); h, w = img.shape[:2]
         gts = []
-        lp = ip.parent.parent / "labels" / (ip.stem + ".txt")
+        lp = label_path(ip)
         for line in (lp.read_text().split("\n") if lp.exists() else []):
             p = line.split()
             if len(p) == 5:
@@ -87,7 +94,7 @@ def main():
                "mean_vision_ms": round(sum(times) / n, 1) if n else 0}
     print("\n" + "\n".join(f"{k:28s} {v}" for k, v in summary.items()))
     Path(a.out).mkdir(exist_ok=True)
-    tag = Path(a.images).parent.parent.name + "_" + Path(a.images).parent.name
+    tag = a.tag or Path(a.images).parent.parent.name + "_" + Path(a.images).parent.name
     (Path(a.out) / f"board_eval_{tag}.json").write_text(json.dumps({"summary": summary, "per_class": rows}, indent=2))
     print("wrote", Path(a.out) / f"board_eval_{tag}.json")
 

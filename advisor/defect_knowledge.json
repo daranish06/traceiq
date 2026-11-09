@@ -1,73 +1,288 @@
 {
-  "_note": "DRAFT for team review. Bare-PCB fabrication defects (after etching/drilling, before assembly). Causes and actions are short, general shop-floor guidance; check against your own process and the applicable acceptance standard (e.g. IPC-A-600 class) before relying on them.",
+  "_note": "DRAFT for team review. Stage 1 entries: bare-PCB fabrication defects (after etching/drilling, before assembly); check against IPC-A-600. Stage 2 entries (insufficient_solder ... oxidation): assembled-board solder and component defects; check against IPC-A-610 and your own process before relying on them.",
   "missing_hole": {
     "label": "Missing hole",
     "severity": "major",
     "what": "A drilled hole that should be present is absent.",
-    "causes": ["Drill bit broken or worn out during the run", "Hole missing from the drill file or wrong tool assignment", "Drilling step skipped or stopped early on part of the panel"],
-    "actions": ["Compare the board with the drill drawing to confirm the hole is required", "Check the drill machine log and the bit for breakage", "Re-drill if the process allows, otherwise reject the board and check the rest of the panel"]
+    "causes": [
+      "Drill bit broken or worn out during the run",
+      "Hole missing from the drill file or wrong tool assignment",
+      "Drilling step skipped or stopped early on part of the panel"
+    ],
+    "actions": [
+      "Compare the board with the drill drawing to confirm the hole is required",
+      "Check the drill machine log and the bit for breakage",
+      "Re-drill if the process allows, otherwise reject the board and check the rest of the panel"
+    ]
   },
   "mouse_bite": {
     "label": "Mouse bite",
     "severity": "minor",
     "what": "Small bites or notches along the edge of a copper trace, reducing its width.",
-    "causes": ["Over-etching or uneven etch rate", "Defects or dust on the photoresist or phototool during imaging", "Poor resist adhesion at the trace edge"],
-    "actions": ["Measure the remaining trace width against the minimum allowed width", "Reject if the width reduction exceeds the acceptance limit", "Check etchant concentration, speed and resist exposure"]
+    "causes": [
+      "Over-etching or uneven etch rate",
+      "Defects or dust on the photoresist or phototool during imaging",
+      "Poor resist adhesion at the trace edge"
+    ],
+    "actions": [
+      "Measure the remaining trace width against the minimum allowed width",
+      "Reject if the width reduction exceeds the acceptance limit",
+      "Check etchant concentration, speed and resist exposure"
+    ]
   },
   "open_circuit": {
     "label": "Open circuit",
     "severity": "critical",
     "what": "A copper trace is broken, so the connection is lost.",
-    "causes": ["Over-etching through a narrow part of the trace", "Scratch or handling damage across the trace", "Dust or a resist defect that blocked copper during imaging"],
-    "actions": ["Confirm with a continuity test across the break", "Reject the board unless a repair is permitted for this product class", "Inspect the phototool and etch settings for the same location on other boards"]
+    "causes": [
+      "Over-etching through a narrow part of the trace",
+      "Scratch or handling damage across the trace",
+      "Dust or a resist defect that blocked copper during imaging"
+    ],
+    "actions": [
+      "Confirm with a continuity test across the break",
+      "Reject the board unless a repair is permitted for this product class",
+      "Inspect the phototool and etch settings for the same location on other boards"
+    ]
   },
   "short": {
     "label": "Short circuit",
     "severity": "critical",
     "what": "Unwanted copper connects two conductors that should be isolated.",
-    "causes": ["Under-etching leaving a copper bridge", "Resist residue or contamination on the artwork", "Dust or copper particles during imaging or plating"],
-    "actions": ["Confirm with an electrical isolation test between the two nets", "Reject, or remove the bridge only if rework is allowed, then re-test", "Check etch time and cleanliness of phototools and the imaging area"]
+    "causes": [
+      "Under-etching leaving a copper bridge",
+      "Resist residue or contamination on the artwork",
+      "Dust or copper particles during imaging or plating"
+    ],
+    "actions": [
+      "Confirm with an electrical isolation test between the two nets",
+      "Reject, or remove the bridge only if rework is allowed, then re-test",
+      "Check etch time and cleanliness of phototools and the imaging area"
+    ]
   },
   "spur": {
     "label": "Spur",
     "severity": "minor",
     "what": "A small copper protrusion sticking out from the edge of a conductor.",
-    "causes": ["Dust or scratch on the phototool", "Incomplete development or under-etching", "Resist defects at the conductor edge"],
-    "actions": ["Measure the spacing between the spur and the nearest conductor", "Reject if spacing falls below the minimum clearance", "Clean or replace the phototool and check developer and etch settings"]
+    "causes": [
+      "Dust or scratch on the phototool",
+      "Incomplete development or under-etching",
+      "Resist defects at the conductor edge"
+    ],
+    "actions": [
+      "Measure the spacing between the spur and the nearest conductor",
+      "Reject if spacing falls below the minimum clearance",
+      "Clean or replace the phototool and check developer and etch settings"
+    ]
   },
   "spurious_copper": {
     "label": "Spurious copper",
     "severity": "major",
     "what": "An isolated patch of copper left where there should be none.",
-    "causes": ["Incomplete etching in that area", "Resist splash or defect protecting copper that should be removed", "Contamination on the panel before etching"],
-    "actions": ["Check whether the copper reduces clearance to nearby conductors", "Reject or remove it if rework is allowed, then re-inspect", "Review etch uniformity and panel cleaning before imaging"]
+    "causes": [
+      "Incomplete etching in that area",
+      "Resist splash or defect protecting copper that should be removed",
+      "Contamination on the panel before etching"
+    ],
+    "actions": [
+      "Check whether the copper reduces clearance to nearby conductors",
+      "Reject or remove it if rework is allowed, then re-inspect",
+      "Review etch uniformity and panel cleaning before imaging"
+    ]
   },
   "hole_breakout": {
     "label": "Hole breakout",
     "severity": "major",
     "what": "The drilled hole is not centred in its pad, so the copper ring around it is broken.",
-    "causes": ["Drill registration error or misaligned tooling", "Panel stretch or shrink between imaging and drilling", "Layer-to-layer misregistration"],
-    "actions": ["Measure the remaining annular ring against the minimum allowed", "Reject if the breakout exceeds the acceptance limit", "Check drill registration and tooling pins before the next panel"]
+    "causes": [
+      "Drill registration error or misaligned tooling",
+      "Panel stretch or shrink between imaging and drilling",
+      "Layer-to-layer misregistration"
+    ],
+    "actions": [
+      "Measure the remaining annular ring against the minimum allowed",
+      "Reject if the breakout exceeds the acceptance limit",
+      "Check drill registration and tooling pins before the next panel"
+    ]
   },
   "conductor_scratch": {
     "label": "Conductor scratch",
     "severity": "minor",
     "what": "A scratch on a copper conductor from handling or transport.",
-    "causes": ["Boards stacked without separators", "Rough handling or conveyor contact", "Tools or fixtures touching the surface"],
-    "actions": ["Check whether the scratch reduces trace width or exposes the base material", "Reject if conductor thickness or width is below the limit", "Improve handling: gloves, separators, conveyor inspection"]
+    "causes": [
+      "Boards stacked without separators",
+      "Rough handling or conveyor contact",
+      "Tools or fixtures touching the surface"
+    ],
+    "actions": [
+      "Check whether the scratch reduces trace width or exposes the base material",
+      "Reject if conductor thickness or width is below the limit",
+      "Improve handling: gloves, separators, conveyor inspection"
+    ]
   },
   "conductor_foreign_object": {
     "label": "Foreign object on conductor",
     "severity": "minor",
     "what": "Debris such as dust, fibre or resist particles on a copper conductor.",
-    "causes": ["Dust or fibres in the work area", "Resist or film particles not cleaned off", "Contaminated handling surfaces"],
-    "actions": ["Clean the area (air blow or approved solvent) and re-inspect", "Reject if the object is embedded or conductive and cannot be removed", "Check cleanliness of the line and handling area"]
+    "causes": [
+      "Dust or fibres in the work area",
+      "Resist or film particles not cleaned off",
+      "Contaminated handling surfaces"
+    ],
+    "actions": [
+      "Clean the area (air blow or approved solvent) and re-inspect",
+      "Reject if the object is embedded or conductive and cannot be removed",
+      "Check cleanliness of the line and handling area"
+    ]
   },
   "base_material_foreign_object": {
     "label": "Foreign object on base material",
     "severity": "minor",
     "what": "Debris or an inclusion on or in the laminate between conductors.",
-    "causes": ["Contaminated laminate from the supplier", "Debris trapped during lamination or handling", "Dust in the work area"],
-    "actions": ["Check whether it is conductive or reduces spacing between conductors", "Clean if it is on the surface; reject if it is embedded in the laminate", "Inform incoming inspection if laminate contamination repeats"]
+    "causes": [
+      "Contaminated laminate from the supplier",
+      "Debris trapped during lamination or handling",
+      "Dust in the work area"
+    ],
+    "actions": [
+      "Check whether it is conductive or reduces spacing between conductors",
+      "Clean if it is on the surface; reject if it is embedded in the laminate",
+      "Inform incoming inspection if laminate contamination repeats"
+    ]
+  },
+  "insufficient_solder": {
+    "label": "Insufficient solder",
+    "severity": "major",
+    "what": "A solder joint has too little solder to form a proper fillet between the lead and the pad.",
+    "causes": [
+      "Too little solder paste from a blocked stencil aperture",
+      "Poor wetting from oxidised or contaminated pads or leads",
+      "Reflow or wave temperature profile too short or too cool"
+    ],
+    "actions": [
+      "Add solder and flux to the joint and check the fillet",
+      "Rework by adding solder and flux to the joint",
+      "Clean or check the stencil aperture and the paste volume on the printer"
+    ]
+  },
+  "excess_solder": {
+    "label": "Excess solder",
+    "severity": "minor",
+    "what": "A solder joint has too much solder, forming a large ball or a fillet that hides the lead outline.",
+    "causes": [
+      "Too much solder paste from a thick stencil",
+      "Paste smeared during printing or placement",
+      "Hand soldering with too much solder wire"
+    ],
+    "actions": [
+      "Check the joint does not touch nearby pads, remove extra with wick",
+      "Remove extra solder with solder wick if the joint is out of limits",
+      "Check stencil thickness, aperture size and printer pressure"
+    ]
+  },
+  "solder_bridge": {
+    "label": "Solder bridge",
+    "severity": "critical",
+    "what": "Solder joins two pads or leads that should be separate, creating an unwanted short circuit.",
+    "causes": [
+      "Too much solder paste between fine-pitch pads",
+      "Stencil misaligned with the pads",
+      "Component pressed too hard or placed off position"
+    ],
+    "actions": [
+      "Remove the bridge with flux and solder wick, then check for a short",
+      "Check the joint and neighbouring pins for a short with a multimeter after rework",
+      "Check stencil alignment and paste volume on fine-pitch parts"
+    ]
+  },
+  "solder_void": {
+    "label": "Solder void",
+    "severity": "minor",
+    "what": "Gas pockets or holes inside or on the surface of a solder joint.",
+    "causes": [
+      "Flux or moisture outgassing during reflow",
+      "Reflow profile with too short a soak or too fast a ramp",
+      "Contaminated pads or old solder paste"
+    ],
+    "actions": [
+      "Check the void size against the limit and rework large voids",
+      "Rework the joint if the void is large or on a power or thermal pad",
+      "Check paste age and storage, and adjust the reflow soak time"
+    ]
+  },
+  "missing_component": {
+    "label": "Missing component",
+    "severity": "critical",
+    "what": "A component that should be mounted on the board is absent from its pads.",
+    "causes": [
+      "Pick-and-place nozzle failed to pick or dropped the part",
+      "Feeder empty or wrong part loaded",
+      "Part knocked off during handling or before reflow"
+    ],
+    "actions": [
+      "Confirm the position is populated in the BOM, then fit the part",
+      "Place and solder the missing part, then retest the board",
+      "Check the feeder and nozzle log on the pick-and-place machine"
+    ]
+  },
+  "shifted_component": {
+    "label": "Shifted component",
+    "severity": "major",
+    "what": "A component is displaced or rotated from its correct position on the pads.",
+    "causes": [
+      "Placement offset in the machine program",
+      "Board vibration or knocks before reflow",
+      "Uneven pad heating causing the part to drift (tombstoning or skew)"
+    ],
+    "actions": [
+      "Check the lead overhang on the pads and realign the part",
+      "Reflow and realign the part, or replace it if it was damaged",
+      "Check placement offsets and the reflow profile"
+    ]
+  },
+  "burn": {
+    "label": "Burn mark",
+    "severity": "critical",
+    "what": "Discolouration or charring on the board or a component from overheating.",
+    "causes": [
+      "Soldering iron held too long or too hot",
+      "Reflow temperature too high",
+      "Component overheating or electrical overstress in test"
+    ],
+    "actions": [
+      "Reject the board and check for lifted pads and damaged parts",
+      "Test the affected component and circuit before any rework",
+      "Check soldering iron temperature, reflow profile and test setup"
+    ]
+  },
+  "physical_damage": {
+    "label": "Physical damage",
+    "severity": "major",
+    "what": "A crack, chip, dent or broken part on a component or the board.",
+    "causes": [
+      "Mechanical stress from handling or depaneling",
+      "Board flexing that cracks ceramic components",
+      "Dropped boards or tools striking the assembly"
+    ],
+    "actions": [
+      "Replace the cracked or chipped part and test the circuit",
+      "Test the circuit around the damaged part",
+      "Check handling, depaneling and fixture pressure on the line"
+    ]
+  },
+  "oxidation": {
+    "label": "Oxidation",
+    "severity": "minor",
+    "what": "Dull, discoloured or corroded copper or solder surfaces.",
+    "causes": [
+      "Boards or parts stored too long in humid air",
+      "Missing or worn surface finish",
+      "Flux residues left on the board"
+    ],
+    "actions": [
+      "Clean the area and check that solder wets properly",
+      "Rework joints that do not wet properly",
+      "Check storage conditions, shelf life and cleaning after soldering"
+    ]
   }
 }
