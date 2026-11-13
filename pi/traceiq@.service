@@ -1,0 +1,13 @@
+[Unit]
+Description=TraceIQ on-device PCB inspection
+After=multi-user.target
+
+[Service]
+User=%i
+WorkingDirectory=/home/%i/traceiq
+ExecStart=/bin/bash /home/%i/traceiq/pi/run_traceiq.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
