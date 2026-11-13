@@ -14,7 +14,11 @@ Examples
 """
 from __future__ import annotations
 
-import argparse, csv, json, sys, time
+import argparse, csv, json, os, sys, time
+
+# Everything runs on-device. Stop library telemetry so nothing is sent even when a network is present.
+os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from dataclasses import asdict
 from pathlib import Path
 
@@ -95,6 +99,12 @@ class Detector:
         """tiling: 'on' = always cut into tile x tile crops; 'off' = whole image resized to tile;
         'auto' = whole image unless it is more than twice the tile size on its long side."""
         from ultralytics import YOLO
+        try:  # no usage events to Ultralytics' servers
+            from ultralytics import settings
+            if settings.get("sync", False):
+                settings.update({"sync": False})
+        except Exception:  # noqa: BLE001
+            pass
         self.model = YOLO(model_path, task="detect")
         self.names = self.model.names
         self.thr = class_thresholds or {}

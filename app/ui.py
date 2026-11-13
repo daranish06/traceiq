@@ -14,7 +14,7 @@ each stage's model is loaded on first use and then kept in memory.
 """
 from __future__ import annotations
 
-import argparse, csv, json, sys, time
+import argparse, csv, json, os, socket, sys, time
 from collections import Counter
 from pathlib import Path
 
@@ -92,6 +92,15 @@ class Alert:
 
 
 # ---------------------------------------------------------------- app
+def network_status() -> str:
+    """Shown in the dashboard so the demo can prove it runs with no network."""
+    try:
+        socket.create_connection(("1.1.1.1", 53), timeout=0.5).close()
+        return "🌐 Network: connected (not used for inspection)"
+    except OSError:
+        return "✅ Offline: all detection, advice and logging run on this device"
+
+
 def build_app(a):
     import gradio as gr
 
@@ -182,6 +191,7 @@ def build_app(a):
 
     with gr.Blocks(title="TraceIQ") as app:
         gr.Markdown("## TraceIQ: PCB defect inspection &nbsp;·&nbsp; on-device AI (YOLO + Llama 3.2 1B / ExecuTorch)")
+        net = gr.Markdown(network_status())
         with gr.Row():
             with gr.Column(scale=1):
                 stage_in = gr.Radio(list(stage_names), value=STAGES[1]["name"], label="Inspection stage")
@@ -198,6 +208,7 @@ def build_app(a):
             defects = gr.Dataframe(headers=["Defect", "Severity", "Location", "Confidence"],
                                    label="Defects", wrap=True)
             advice = gr.Markdown(label="Operator advice")
+        run.click(network_status, None, net)
         run.click(inspect, [image, source, stage_in], [result, verdict, defects, advice, timing, stats, log_file])
     return app
 
