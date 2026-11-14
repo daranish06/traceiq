@@ -316,7 +316,7 @@ PATTERNS = {
     "missing_hole": r"missing holes?|holes? (?:is |are )?missing|no hole",
     "mouse_bite": r"mouse[- ]bites?",
     "open_circuit": r"open[- ]circuits?|broken trace|trace is broken|open trace",
-    "short": r"short[- ]circuits?|\bshorts?\b|bridg",
+    "short": r"short[- ]circuits?|\bshorts\b|\ba short\b(?! (?:line|time|while|distance|lead))|copper bridg",
     "spur": r"\bspurs?\b",
     "spurious_copper": r"spurious copper|copper island|isolated copper",
     "hole_breakout": r"breakout|break-out|annular ring",
