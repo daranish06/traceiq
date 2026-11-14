@@ -27,7 +27,8 @@ Two inspection stages are planned:
 - [x] Pipeline, operator dashboard (Gradio), CSV/JSONL logging, GPIO alert code
 - [x] Vision model exported to NCNN and ONNX for the Arm CPU
 - [x] Stage 2: assembled-board model (9 solder/component classes), selectable in the dashboard
-- [ ] Deployment and benchmarks on Pi 5 (FPS, latency, memory, temperature)
+- [x] Full pipeline deployed on Raspberry Pi 5 (8 GB, CPU only): camera, YOLO (NCNN), rule verdict, Llama (ExecuTorch), dashboard, log
+- [x] Benchmarks on Pi 5 (latency, FPS, memory, temperature, Llama time-to-first-token and tokens/s)
 - [ ] Test on our own camera photos of real boards
 
 ## Results so far: Stage 1 baseline (YOLO11n, 2.6 M parameters, 640×640 tiles)
@@ -137,6 +138,34 @@ burn 0.47 / 0.75.
 Weak points: burn marks and solder voids (few test examples: 32 and 28). `oxidation` has no val/test examples in this
 dataset, so it is trained but not measured.
 
+## Results: on-device speed, Raspberry Pi 5 (8 GB, CPU only, no accelerator)
+
+Measured with `bench/bench_pi.py` (browser closed, active cooler, official 27 W supply).
+
+Vision (YOLO11n, NCNN on the Arm CPU):
+
+| | Stage 1, bare board | Stage 2, assembled board |
+|---|---|---|
+| Vision per board, mean / p95 | 1,388 / 2,752 ms (15.1 tiles on average) | **83.7 / 122.7 ms** (1 tile) |
+| Throughput | 0.71 boards/s (42 / min) | **10.6 FPS** (635 / min) |
+| Pre-process / inference / post-process | 0.1 / 1,387.8 / 0.3 ms | 0.0 / 83.5 / 0.2 ms |
+| Peak system RAM | 2.47 GB | 2.36 GB |
+| Temperature start → end, throttling | 50.5 → 59.8 °C, none | 54.9 → 59.3 °C, none |
+
+Advisor (Llama 3.2 1B Instruct, ExecuTorch XNNPACK, 4-bit weights, `llama_main` on the Arm CPU), mean of 3 runs:
+
+| | |
+|---|---|
+| Model load | 2.5 s (8.8 s on a cold start) |
+| Time to first token (304-token prompt) | **3.1 s** (prefill ≈ 100 tokens/s) |
+| Generation speed | **12.0 tokens/s** |
+| Response time excluding load (93 tokens) | **10.8 s** |
+| Peak system RAM with vision model and Llama | **3.39 GB** of 8 GB |
+
+Inference is over 99% of vision time, so model size and input resolution are the levers for speed. First real-board test:
+a hand-assembled board under the Kreo Owl Lite webcam (1080p, fixed focus found with `pi/focus_sweep.py`) was
+flagged FAIL for insufficient solder on unsoldered joints, with Llama advice accepted by the safety check.
+
 ## Repository layout
 
 ```
@@ -200,7 +229,7 @@ Advice times vary with laptop CPU load; Pi 5 times will be measured separately. 
 
 1. PKU defects are synthetic and cover ~10 board designs, so dataset scores are optimistic. Mitigation: board-held-out test, real-factory data (DsPCBSD+), and a separate test on our own Pi-camera photos.
 2. Stage 2 (assembled boards) is trained on public close-up photos; accuracy on whole boards seen by our own camera is still to be measured.
-3. Pi 5 speed with tiling is not yet measured.
+3. Stage 1 on full-board photos takes about 1.4 s per board on the Pi CPU (about 15 tiles per board); fine for a place-and-inspect station, not for a fast conveyor.
 4. PKU-Market-PCB and DsPCBSD+ annotate different defect types (DsPCBSD+ has no `missing_hole` labels), so combined-test precision for some classes is understated.
 
 ## Team
