@@ -326,7 +326,7 @@ PATTERNS = {
     # Stage 2 (assembled board)
     "insufficient_solder": r"insufficient solder|(?:too little|not enough|lack of) solder(?! paste)|starved",
     "excess_solder": r"excess(?:ive)? solder(?! paste)|too much solder(?! paste)|extra solder(?! paste)",
-    "solder_bridge": r"solder bridg\w*|\bbridg\w*|short[- ]circuits?|\bshorts?\b",
+    "solder_bridge": r"solder bridg\w*|\bbridg\w*|short[- ]circuits?|\bshorts\b|\ba short\b(?! (?:line|time|while|distance|lead))",
     "solder_void": r"\bvoids?\b|gas pockets?|\bbubbles?\b",
     "missing_component": r"missing (?:component|part)s?|(?:component|part)s? (?:is |are )?missing|\babsent\b",
     "shifted_component": r"\bshifted\b|\bdisplaced\b|misaligned (?:component|part)|(?:component|part)s? (?:is |are )?"
