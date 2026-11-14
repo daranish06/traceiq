@@ -32,8 +32,10 @@ VERDICT_CSS = {"PASS": "#1a7f37", "REVIEW": "#b26b00", "FAIL": "#c62828"}
 
 # ---------------------------------------------------------------- camera (Pi camera, else USB webcam)
 class Camera:
-    def __init__(self):
-        self.kind, self.cam = None, None
+    def __init__(self, focus: int | None = None):
+        """focus: fixed lens position for a USB webcam (1-1023 on the Kreo Owl Lite), found with
+        pi/focus_sweep.py for the bench height. None keeps autofocus (unreliable at close range)."""
+        self.kind, self.cam, self.focus = None, None, focus
 
     def _open(self):
         # Pi ribbon (CSI) camera -> Picamera2. USB webcams -> OpenCV/V4L2: the webcam runs its own
@@ -54,6 +56,10 @@ class Camera:
         if not cap.isOpened():
             cap = cv2.VideoCapture(0)
         if cap.isOpened():
+            if self.focus:  # lock focus at the bench distance (V4L2 controls; harmless if unsupported)
+                import subprocess
+                subprocess.run(f"v4l2-ctl -d /dev/video0 -c focus_automatic_continuous=0 "
+                               f"-c focus_absolute={int(self.focus)}", shell=True, capture_output=True)
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # 1080p at full frame rate over USB
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -137,7 +143,7 @@ def build_app(a):
     if a.backend != "template":
         cfg = {k: str(Path(v).expanduser()) if isinstance(v, str) and ("/" in v or v.startswith("~")) else v
                for k, v in json.loads(Path(a.config).read_text())["native" if a.backend == "inproc" else a.backend].items()}
-    camera, alert = Camera(), Alert(a.gpio)
+    camera, alert = Camera(a.focus), Alert(a.gpio)
     csv_path = out_dir / "inspections.csv"
 
     def next_board_id() -> str:
@@ -233,6 +239,8 @@ def main():
     ap.add_argument("--out", default=str(ROOT / "output"))
     ap.add_argument("--gpio", action="store_true", help="buzzer GPIO17, red LED GPIO27, green LED GPIO22")
     ap.add_argument("--port", type=int, default=7860)
+    ap.add_argument("--focus", type=int, default=int(os.environ.get("TRACEIQ_FOCUS", 0)) or None,
+                    help="fixed webcam focus (pi/focus_sweep.py); default: env TRACEIQ_FOCUS, else autofocus")
     a = ap.parse_args()
     build_app(a).queue().launch(server_name="0.0.0.0", server_port=a.port)
 

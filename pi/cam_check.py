@@ -17,9 +17,12 @@ from ui import Camera  # noqa: E402
 ap = argparse.ArgumentParser()
 ap.add_argument("--shots", type=int, default=5)
 ap.add_argument("--every", type=float, default=3.0)
+ap.add_argument("--focus", type=int, default=None, help="fixed focus to test (default: pi/camera.env)")
 a = ap.parse_args()
-
-cam = Camera()
+env = ROOT / "pi/camera.env"
+focus = a.focus or (int(env.read_text().split("=")[1]) if env.exists() else None)
+print("focus:", focus or "auto")
+cam = Camera(focus)
 for i in range(1, a.shots + 1):
     t = time.time()
     f = cam.capture_bgr()
