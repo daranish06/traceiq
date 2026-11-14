@@ -36,19 +36,31 @@ class Camera:
         self.kind, self.cam = None, None
 
     def _open(self):
+        # Pi ribbon (CSI) camera -> Picamera2. USB webcams -> OpenCV/V4L2: the webcam runs its own
+        # auto-exposure and autofocus, which libcamera's USB path does not settle before the first frame.
         try:
             from picamera2 import Picamera2
-            self.cam = Picamera2()
-            self.cam.configure(self.cam.create_still_configuration(main={"format": "RGB888"}))
-            self.cam.start()
-            time.sleep(1.0)  # let auto-exposure / autofocus settle
-            self.kind = "picamera2"
+            csi = [c for c in Picamera2.global_camera_info() if "usb" not in str(c.get("Id", "")).lower()]
+            if csi:
+                self.cam = Picamera2(csi[0]["Num"])
+                self.cam.configure(self.cam.create_still_configuration(main={"format": "RGB888"}))
+                self.cam.start()
+                time.sleep(1.0)  # let auto-exposure / autofocus settle
+                self.kind = "picamera2"
+                return
         except Exception:  # noqa: BLE001
+            pass
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        if not cap.isOpened():
             cap = cv2.VideoCapture(0)
-            if cap.isOpened():
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-                self.cam, self.kind = cap, "opencv"
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # 1080p at full frame rate over USB
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+            t0 = time.time()
+            while time.time() - t0 < 2.0:  # ~2 s of frames so exposure, white balance and focus settle
+                cap.read()
+            self.cam, self.kind = cap, "opencv"
 
     def capture_bgr(self) -> np.ndarray | None:
         if self.cam is None:
@@ -60,7 +72,7 @@ class Camera:
                 pass
             return self.cam.capture_array()  # Picamera2 "RGB888" is BGR byte order
         if self.kind == "opencv":
-            for _ in range(3):  # drop stale frames
+            for _ in range(5):  # drop frames buffered before the click
                 self.cam.read()
             ok, frame = self.cam.read()
             return frame if ok else None
