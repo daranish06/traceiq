@@ -354,10 +354,10 @@ def drop_unsupported(advice: str, insp: Inspection) -> str:
     for line in advice.splitlines():
         head, sep, body = line.partition(":")
         if sep and head.strip().lower() in ("cause", "action"):
-            parts = re.split(r"(?<=[;.])\s+", body.strip())
+            parts = re.split(r"(?<=[;.])\s+|,?\s+(?=(?:and )?then\b)", body.strip())
             kept = [p for p in parts if not unsupported(p)]
             if kept and len(kept) < len(parts):
-                text = " ".join(kept).rstrip(";").strip()
+                text = " ".join(kept).rstrip(";,").strip()
                 line = f"{head}: {text if re.search(r'[.!?]$', text) else text + '.'}"
         out.append(line)
     return "\n".join(out)
