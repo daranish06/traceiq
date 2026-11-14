@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "advisor"))
 import advisor as A  # noqa: E402
 
 COLORS = {"critical": (0, 0, 255), "major": (0, 140, 255), "minor": (0, 200, 255)}  # BGR
+MAX_LABELS = 6  # text labels drawn on the image; the dashboard table lists every defect
 VERDICT_COLORS = {"PASS": (0, 160, 0), "REVIEW": (0, 170, 255), "FAIL": (0, 0, 220)}
 
 # Two inspection stages, each with its own model, thresholds and tiling mode.
@@ -169,11 +170,15 @@ def annotate(img: np.ndarray, insp: A.Inspection) -> np.ndarray:
     def free(r):
         return all(r[2] <= p[0] or r[0] >= p[2] or r[3] <= p[1] or r[1] >= p[3] for p in placed)
 
-    for d in insp.defects:
+    # every defect gets a box; only the most confident get a text label so a busy board stays readable
+    labelled = {id(d) for d in sorted(insp.defects, key=lambda d: -d.confidence)[:MAX_LABELS]}
+    for d in sorted(insp.defects, key=lambda d: d.confidence):  # strongest drawn last (on top)
         x1, y1, x2, y2 = d.bbox_px
         pad = 6 * th
         col = COLORS[d.severity]
         cv2.rectangle(out, (x1 - pad, y1 - pad), (x2 + pad, y2 + pad), col, 2 * th)
+        if id(d) not in labelled:
+            continue
         label = f"{A.KNOWLEDGE[d.defect_class]['label']} {d.confidence:.2f}"
         (tw, tht), base = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5 * th, th)
         lh = tht + base + 2
