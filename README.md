@@ -29,7 +29,8 @@ Two inspection stages are planned:
 - [x] Stage 2: assembled-board model (9 solder/component classes), selectable in the dashboard
 - [x] Full pipeline deployed on Raspberry Pi 5 (8 GB, CPU only): camera, YOLO (NCNN), rule verdict, Llama (ExecuTorch), dashboard, log
 - [x] Benchmarks on Pi 5 (latency, FPS, memory, temperature, Llama time-to-first-token and tokens/s)
-- [ ] Test on our own camera photos of real boards
+- [x] Real-board test: 21 field-returned faulty boards under our own camera on the Pi (see below)
+- [x] Offline test (Wi-Fi off, Ethernet unplugged), physical alert (LED + buzzer), auto-start at boot
 
 ## Results so far: Stage 1 baseline (YOLO11n, 2.6 M parameters, 640×640 tiles)
 
@@ -166,14 +167,45 @@ Inference is over 99% of vision time, so model size and input resolution are the
 a hand-assembled board under the Kreo Owl Lite webcam (1080p, fixed focus found with `pi/focus_sweep.py`) was
 flagged FAIL for insufficient solder on unsoldered joints, with Llama advice accepted by the safety check.
 
+## Results: real boards under our own camera (Raspberry Pi 5, 22 Nov 2026)
+
+21 field-returned faulty boards (student-built through-hole boards, two bare boards, a red relay module, a blue
+Arduino shield), 38 inspections including retakes and large boards in parts. Faults were reported as "not working",
+so each alarm was judged visually from the captured images (not verified electrically); per-box judgements are in
+`bench/realboard_review.csv`.
+
+| Judgement of the 37 alarms | Count |
+|---|---|
+| Correct defect type | 2 |
+| Real problem, wrong type (blobs/rework called "bridge"; empty IC footprints called "insufficient solder") | 10 |
+| False alarm (mostly single normal joints called "solder bridge", confidence 0.30–0.46) | 18 |
+| Unclear (hidden or blurred) | 7 |
+
+Clean bare boards passed correctly; messy solder areas were found, but about half of the alarms were false and burn
+marks and red/blue boards were missed. The public training data (close-ups of mostly factory boards) differ from
+student-made boards under a desk webcam; fine-tuning on our own bench images is the Phase 2 fix. Llama advice on these
+boards: 16 of 20 answers accepted by the safety check, about 16 s per board in live use.
+
 ## Repository layout
 
 ```
-vision/
-  tile_dataset.py       cut full-size PCB photos + YOLO labels into overlapping 640×640 tiles
-  stratified_split.py   80/10/10 split per defect class (every class in every split)
-  board_split.py        hold out whole board designs for valid/test
-run_overnight.sh        train + test both evaluation setups back to back
+vision/   dataset prep and splits, tiling, threshold tuning, full-board evaluation, NCNN/ONNX export
+advisor/  Llama prompt, safety check, template fallback, knowledge file, HF->Meta conversion, export config, advice eval
+app/      inspection pipeline (inspect_board.py) and operator dashboard (ui.py)
+pi/       Pi setup, copy script, auto-start service, camera check and focus sweep
+bench/    Pi benchmark script, real-board review
+run_*.sh  training runs (Stage 1, model comparison, Stage 2)
+```
+
+## Run on a Raspberry Pi 5
+
+```bash
+# on the laptop: copy code, models and the exported Llama to the Pi
+bash pi/copy_to_pi.sh traceiq@<pi-address>
+# on the Pi
+bash ~/traceiq/pi/setup_pi.sh          # packages, Python env, auto-start at boot
+python ~/traceiq/pi/focus_sweep.py     # board under the camera: lock the sharpest focus
+bash ~/traceiq/pi/run_traceiq.sh       # then open http://localhost:7860 (or http://<pi-address>:7860)
 ```
 
 Datasets, training runs and model weights are not stored in git (see `.gitignore`).
