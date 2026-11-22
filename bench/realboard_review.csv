@@ -1,0 +1,38 @@
+box,predicted,confidence,judgement,note
+37.1,solder_bridge,0.39,false,joint at jumper end; no bridge
+38.1,solder_bridge,0.46,false,single isolated joint
+39.1,solder_bridge,0.35,false,single isolated joint
+41.1,solder_bridge,0.40,anomaly_wrong_class,irregular spiky joint (excess/poor joint), not a bridge
+41.2,missing_component,0.50,false,IC pin row is populated
+42.1,solder_bridge,0.44,false,single joint with flux
+42.2,missing_component,0.35,false,IC pin row is populated
+45.1,missing_component,0.58,false,two soldered joints
+47.1,solder_bridge,0.50,anomaly_wrong_class,lumpy excess/cold joint
+48.1,insufficient_solder,0.67,correct,empty unsoldered pad
+48.2,insufficient_solder,0.56,unclear,hidden by label
+48.3,insufficient_solder,0.53,correct,unsoldered pads in IC row
+48.4,insufficient_solder,0.48,anomaly_wrong_class,messy flux-covered joint cluster
+48.5,solder_bridge,0.81,anomaly_wrong_class,large solder blob (excess solder)
+48.6,solder_bridge,0.43,unclear,hidden by label
+51.1,solder_bridge,0.34,false,scratch on solder mask
+52.1,solder_bridge,0.37,false,single isolated joint
+54.1,insufficient_solder,0.52,unclear,blurry
+56.1,insufficient_solder,0.49,unclear,joint with flux ring
+56.2,insufficient_solder,0.46,unclear,rework wire joint
+56.3,insufficient_solder,0.45,unclear,hidden by label
+56.4,solder_bridge,0.33,unclear,closely spaced joints, possible bridge
+57.1,insufficient_solder,0.58,false,normal joint
+58.1,solder_bridge,0.30,false,single isolated joint
+59.1,solder_bridge,0.41,anomaly_wrong_class,messy rework lead cluster
+59.2,solder_bridge,0.32,anomaly_wrong_class,messy rework joint with wire
+62.1,missing_hole,0.61,false,silkscreen marking (Stage 1)
+62.2,missing_hole,0.60,false,silkscreen marking (Stage 1)
+68.1,insufficient_solder,0.58,anomaly_wrong_class,unpopulated IC footprint (missing component)
+68.2,insufficient_solder,0.52,anomaly_wrong_class,unpopulated IC footprint
+68.3,insufficient_solder,0.47,anomaly_wrong_class,unpopulated IC footprint
+70.1,insufficient_solder,0.60,anomaly_wrong_class,unpopulated IC footprint
+70.2,solder_bridge,0.51,false,single isolated joint
+70.3,solder_bridge,0.32,false,single isolated joint
+71.1,solder_bridge,0.43,false,single isolated joint
+74.1,solder_bridge,0.44,false,single isolated joint
+74.2,solder_bridge,0.30,false,joint next to jumper wire
