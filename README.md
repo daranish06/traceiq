@@ -1,6 +1,8 @@
 # TraceIQ
 
 **On-device PCB defect inspection with a Llama advisor, running on a Raspberry Pi 5.**
+**Demo video:** https://youtu.be/8Sw5LmXNPps
+
 Entry for the **Bharat AI-SoC Challenge 2026–27**, Problem Statement 5: *Real-time industrial defect detection & quality-control assistant.*
 
 A camera above an inspection bench captures a PCB. A small YOLO model running on the Pi's Arm CPU detects and classifies defects. Each detection becomes a structured defect record (class, severity, location, confidence). A **Llama 3.2 1B Instruct** model, deployed on-device with **ExecuTorch**, turns those records into plain-language explanations, likely causes and corrective actions for the operator, and writes the inspection log. Everything runs offline.
