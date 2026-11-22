@@ -266,4 +266,4 @@ Advice times vary with laptop CPU load; Pi 5 times will be measured separately. 
 
 ## Team
 
-PSG Institute of Technology and Applied Research, Coimbatore.
+Balaharish M (Team Lead), Daranish K, Hari Ragavan B — PSG Institute of Technology and Applied Research, Coimbatore.
