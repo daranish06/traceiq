@@ -1,7 +1,7 @@
 # TraceIQ
 
 **On-device PCB defect inspection with a Llama advisor, running on a Raspberry Pi 5.**
-**Demo video:** https://youtu.be/8Sw5LmXNPps
+**Demo video:** https://youtu.be/6X447fa0w_k
 
 Entry for the **Bharat AI-SoC Challenge 2026–27**, Problem Statement 5: *Real-time industrial defect detection & quality-control assistant.*
 
